@@ -24,6 +24,9 @@ import {
   Compass,
   ChevronRight,
   ExternalLink,
+  Github,
+  Linkedin,
+  Globe,
 } from 'lucide-react-native';
 
 export default function SettingsScreen() {
@@ -185,6 +188,69 @@ export default function SettingsScreen() {
                   <Text style={styles.rowTitle}>Developer Profile</Text>
                   <Text style={[styles.rowSubtitle, { color: Colors.primary }]}>
                     instagram.com/nam7sh
+                  </Text>
+                </View>
+              </View>
+              <ExternalLink size={14} color={Colors.textMuted} />
+            </TouchableOpacity>
+
+            <View style={styles.divider} />
+
+            <TouchableOpacity
+              style={styles.row}
+              onPress={() => Linking.openURL('https://github.com/p3xz')}
+              activeOpacity={0.7}
+            >
+              <View style={styles.rowLeft}>
+                <View style={[styles.iconCircle, { backgroundColor: 'rgba(255, 255, 255, 0.08)' }]}>
+                  <Github size={16} color={Colors.text} />
+                </View>
+                <View>
+                  <Text style={styles.rowTitle}>GitHub</Text>
+                  <Text style={[styles.rowSubtitle, { color: Colors.primary }]}>
+                    github.com/p3xz
+                  </Text>
+                </View>
+              </View>
+              <ExternalLink size={14} color={Colors.textMuted} />
+            </TouchableOpacity>
+
+            <View style={styles.divider} />
+
+            <TouchableOpacity
+              style={styles.row}
+              onPress={() => Linking.openURL('https://linkedin.com/in/namish-yadav-639769408')}
+              activeOpacity={0.7}
+            >
+              <View style={styles.rowLeft}>
+                <View style={[styles.iconCircle, { backgroundColor: 'rgba(10, 102, 194, 0.12)' }]}>
+                  <Linkedin size={16} color="#0A66C2" />
+                </View>
+                <View>
+                  <Text style={styles.rowTitle}>LinkedIn</Text>
+                  <Text style={[styles.rowSubtitle, { color: Colors.primary }]}>
+                    Namish Yadav
+                  </Text>
+                </View>
+              </View>
+              <ExternalLink size={14} color={Colors.textMuted} />
+            </TouchableOpacity>
+
+            <View style={styles.divider} />
+
+            <TouchableOpacity
+              style={styles.row}
+              onPress={() => Linking.openURL('https://namishhh.vercel.app')}
+              activeOpacity={0.7}
+            >
+              <View style={styles.rowLeft}>
+                <View style={styles.iconCircle}>
+                  <Globe size={16} color={Colors.primary} />
+                </View>
+                <View>
+                  <Text style={styles.rowTitle}>Portfolio</Text>
+                  <Text style={[styles.rowSubtitle, { color: Colors.primary }]}>
+                    namishhh.vercel.app
                   </Text>
                 </View>
               </View>
