@@ -29,6 +29,8 @@ September 2026.
 
 ## What We Used
 
+![TypeScript](https://skillicons.dev/icons?i=ts) ![Expo](https://skillicons.dev/icons?i=expo) ![React](https://skillicons.dev/icons?i=react) ![SQLite](https://skillicons.dev/icons?i=sqlite) ![iOS](https://skillicons.dev/icons?i=ios) ![Android](https://skillicons.dev/icons?i=android)
+
 - **Language**: TypeScript
 - **Framework**: [Expo](https://expo.dev/) (SDK 54) and [React Native](https://reactnative.dev/) (0.81)
 - **Routing**: [Expo Router](https://docs.expo.dev/router/introduction/)
