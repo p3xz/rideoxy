@@ -29,7 +29,7 @@ export default function RootLayout() {
           setShowRecoveryModal(true);
         }
       } catch (err) {
-        console.error('[brovxi] App initialization error:', err);
+        console.error('[rideoxy] App initialization error:', err);
       }
     }
 

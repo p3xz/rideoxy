@@ -1,5 +1,5 @@
 /**
- * Map configuration for brovxi
+ * Map configuration for Rideoxy
  * MapLibre is the rendering engine inside React Native.
  * OpenFreeMap supplies vector tiles and map styles.
  */

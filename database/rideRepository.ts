@@ -2,10 +2,7 @@ import { getDatabase } from './database';
 import { Ride, RideStatus } from '../types/ride';
 
 export async function createRide(ride: Ride): Promise<void> {
-  const startTime = Date.now();
-  console.log('[brovxi] [RideRepo] createRide: acquiring DB connection for rideId:', ride.id);
   const db = await getDatabase();
-  console.log(`[brovxi] [RideRepo] createRide: inserting ride into database...`);
   await db.runAsync(
     `INSERT INTO rides (id, start_time, end_time, duration, moving_time, distance, average_speed, max_speed, status, created_at)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`,
@@ -22,7 +19,6 @@ export async function createRide(ride: Ride): Promise<void> {
       ride.created_at,
     ]
   );
-  console.log(`[brovxi] [RideRepo] createRide completed in ${Date.now() - startTime}ms`);
 }
 
 export async function updateRide(
@@ -97,15 +93,11 @@ export async function getAllCompletedRides(): Promise<Ride[]> {
 }
 
 export async function getRecentCompletedRides(limit: number = 5): Promise<Ride[]> {
-  const startTime = Date.now();
-  console.log(`[brovxi] [RideRepo] getRecentCompletedRides: acquiring DB for limit=${limit}...`);
   const db = await getDatabase();
-  console.log(`[brovxi] [RideRepo] getRecentCompletedRides: executing query...`);
   const rows = await db.getAllAsync<Ride>(
     `SELECT * FROM rides WHERE status = 'completed' ORDER BY start_time DESC LIMIT ?;`,
     [limit]
   );
-  console.log(`[brovxi] [RideRepo] getRecentCompletedRides: fetched ${rows.length} rows in ${Date.now() - startTime}ms`);
   return rows;
 }
 

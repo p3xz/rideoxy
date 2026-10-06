@@ -33,7 +33,7 @@ export default function PrivacyPolicyScreen() {
           <ShieldCheck size={28} color={Colors.primary} />
           <Text style={styles.bannerTitle}>Local-First Motorcycle Telemetry</Text>
           <Text style={styles.bannerSubtitle}>
-            Brovxi does not transmit ride or GPS telemetry to remote cloud servers in V1. Your riding records reside exclusively on this device.
+            Rideoxy does not transmit ride or GPS telemetry to remote cloud servers in V1. Your riding records reside exclusively on this device.
           </Text>
         </View>
 
@@ -41,12 +41,12 @@ export default function PrivacyPolicyScreen() {
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>1. Summary of Data Practices</Text>
           <Text style={styles.paragraph}>
-            Brovxi is built as a focused, offline-first motorcycle ride recorder:
+            Rideoxy is built as a focused, offline-first motorcycle ride recorder:
           </Text>
           <View style={styles.bulletList}>
             <Text style={styles.bulletItem}>• <Text style={styles.boldText}>No Accounts:</Text> You do not need to register, provide an email, or sign in to use the app.</Text>
             <Text style={styles.bulletItem}>• <Text style={styles.boldText}>No Cloud Database:</Text> All recorded trackpoints, speeds, timestamps, and personal records reside exclusively in your device's local SQLite database.</Text>
-            <Text style={styles.bulletItem}>• <Text style={styles.boldText}>No Advertising:</Text> Brovxi contains no third-party advertising SDKs or tracking pixels.</Text>
+            <Text style={styles.bulletItem}>• <Text style={styles.boldText}>No Advertising:</Text> Rideoxy contains no third-party advertising SDKs or tracking pixels.</Text>
             <Text style={styles.bulletItem}>• <Text style={styles.boldText}>No Telemetry Selling:</Text> Your location history is never sold, shared, or monetized.</Text>
           </View>
         </View>
@@ -55,7 +55,7 @@ export default function PrivacyPolicyScreen() {
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>2. Location Telemetry & Background Use</Text>
           <Text style={styles.paragraph}>
-            Brovxi accesses your device's GPS receiver while recording a motorcycle trip:
+            Rideoxy accesses your device's GPS receiver while recording a motorcycle trip:
           </Text>
           <Text style={styles.paragraph}>
             <Text style={styles.boldText}>Foreground Location:</Text> Used to calculate real-time speed, total distance, moving time, and live route lines on the active cockpit map.
@@ -85,7 +85,7 @@ export default function PrivacyPolicyScreen() {
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>4. Map Providers & Tile Services</Text>
           <Text style={styles.paragraph}>
-            To display maps, Brovxi utilizes MapLibre Native, OpenFreeMap vector tile hosting, and OpenStreetMap data. No personal ride tracks are sent to map tile providers.
+            To display maps, Rideoxy utilizes MapLibre Native, OpenFreeMap vector tile hosting, and OpenStreetMap data. No personal ride tracks are sent to map tile providers.
           </Text>
         </View>
 
@@ -93,7 +93,7 @@ export default function PrivacyPolicyScreen() {
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>5. Developer & Contact</Text>
           <View style={styles.contactCard}>
-            <Text style={styles.contactText}><Text style={styles.boldText}>Application:</Text> Brovxi (V1)</Text>
+            <Text style={styles.contactText}><Text style={styles.boldText}>Application:</Text> Rideoxy (V1)</Text>
             <Text style={styles.contactText}><Text style={styles.boldText}>Developer:</Text> Namish Yadav</Text>
             <Text style={styles.contactText}><Text style={styles.boldText}>Contact:</Text> nam4sh@gmail.com</Text>
           </View>

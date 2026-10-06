@@ -60,7 +60,7 @@ export default function HomeScreen() {
       setRecentRides(rides);
       setBikeName(storedBike);
     } catch (err) {
-      console.error('[brovxi] Error loading home data:', err);
+      console.error('[rideoxy] Error loading home data:', err);
     }
   }, []);
 
@@ -226,7 +226,7 @@ export default function HomeScreen() {
           </View>
           <Text style={styles.heroSubtext}>
             {stats.totalRides > 0
-              ? `${stats.totalRides} completed ${stats.totalRides === 1 ? 'ride' : 'rides'} logged`
+              ? `${stats.totalRides} completed ${stats.totalRides === 1 ? 'ride' : 'rides'}`
               : 'Ready to log your first ride'}
           </Text>
         </View>

@@ -38,7 +38,7 @@ export default function RideDetailScreen() {
         setRide(rideData);
         setRouteCoords(points.map((pt) => [pt.longitude, pt.latitude]));
       } catch (err) {
-        console.error('[brovxi] Error loading ride details:', err);
+        console.error('[rideoxy] Error loading ride details:', err);
       } finally {
         setLoading(false);
       }

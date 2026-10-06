@@ -25,7 +25,7 @@ export default function HistoryScreen() {
       const data = await getAllCompletedRides();
       setRides(data);
     } catch (err) {
-      console.error('[brovxi] Error loading rides history:', err);
+      console.error('[rideoxy] Error loading rides history:', err);
     }
   }, []);
 

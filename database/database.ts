@@ -19,20 +19,16 @@ export async function getDatabase(): Promise<SQLite.SQLiteDatabase> {
 
   if (!dbPromise) {
     dbPromise = (async () => {
-      console.log(`[brovxi] [DB] Opening database connection: "${DB_NAME}"`);
-      const startTime = Date.now();
       try {
         const db = await SQLite.openDatabaseAsync(DB_NAME);
         if (!db) {
           throw new Error('SQLite.openDatabaseAsync returned null or undefined');
         }
-        console.log(`[brovxi] [DB] Database connection established in ${Date.now() - startTime}ms. Initializing schema...`);
         await initDatabase(db);
-        console.log(`[brovxi] [DB] Database schema and PRAGMAs initialized successfully in ${Date.now() - startTime}ms total`);
         dbInstance = db;
         return db;
       } catch (err) {
-        console.error('[brovxi] [DB] Fatal error opening or initializing database:', err);
+        console.error('[rideoxy] [DB] Fatal error opening or initializing database:', err);
         // Reset dbPromise on failure so subsequent attempts can retry rather than caching the rejected promise
         dbPromise = null;
         dbInstance = null;
@@ -49,7 +45,6 @@ export function getDatabaseSync(): SQLite.SQLiteDatabase {
     return dbInstance;
   }
 
-  console.log(`[brovxi] [DB] Opening synchronous database connection: "${DB_NAME}"`);
   const db = SQLite.openDatabaseSync(DB_NAME);
   initDatabaseSync(db);
   dbInstance = db;
@@ -57,18 +52,15 @@ export function getDatabaseSync(): SQLite.SQLiteDatabase {
 }
 
 async function initDatabase(db: SQLite.SQLiteDatabase): Promise<void> {
-  console.log('[brovxi] [DB] Configuring WAL mode and foreign keys...');
   // Enable foreign keys and WAL mode for better concurrency and data integrity
   await db.execAsync('PRAGMA journal_mode = WAL;');
   await db.execAsync('PRAGMA foreign_keys = ON;');
 
-  console.log('[brovxi] [DB] Creating tables and indexes if not exists...');
   await db.execAsync(CREATE_RIDES_TABLE);
   await db.execAsync(CREATE_TRACK_POINTS_TABLE);
   await db.execAsync(CREATE_SETTINGS_TABLE);
   await db.execAsync(CREATE_FUEL_LOGS_TABLE);
   await db.execAsync(CREATE_INDEXES);
-  console.log('[brovxi] [DB] Tables and indexes ready');
 }
 
 function initDatabaseSync(db: SQLite.SQLiteDatabase): void {
