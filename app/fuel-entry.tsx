@@ -138,7 +138,7 @@ export default function FuelEntryScreen() {
           }
         }
       } catch (err) {
-        console.error('[brovxi] Error initializing fuel form:', err);
+        console.error('[rideoxy] Error initializing fuel form:', err);
       }
     }
 
@@ -342,7 +342,7 @@ export default function FuelEntryScreen() {
       await setFuelPreferences({ defaultFuelType: fuelType });
       router.back();
     } catch (err) {
-      console.error('[brovxi] Error saving fuel log:', err);
+      console.error('[rideoxy] Error saving fuel log:', err);
       Alert.alert('Error', 'Failed to save fuel log record.');
     } finally {
       setIsSubmitting(false);

@@ -53,7 +53,7 @@ export default function StatsScreen() {
       setOverall(statsData);
       setRecords(recordsData);
     } catch (err) {
-      console.error('[brovxi] Error calculating statistics:', err);
+      console.error('[rideoxy] Error calculating statistics:', err);
     }
   }, []);
 

@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "brovxi",
+    "name": "Rideoxy",
     "slug": "brovxi",
     "version": "1.0.0",
     "scheme": "brovxi",
@@ -14,9 +14,9 @@
         "UIBackgroundModes": [
           "location"
         ],
-        "NSLocationWhenInUseUsageDescription": "brovxi uses your location to record motorcycle ride routes, speed, and distance.",
-        "NSLocationAlwaysAndWhenInUseUsageDescription": "brovxi uses background location while an active ride is recording so your route continues when your phone is locked or mounted.",
-        "NSLocationAlwaysUsageDescription": "brovxi uses your location in the background only while a ride is actively recording.",
+        "NSLocationWhenInUseUsageDescription": "Rideoxy uses your location to record motorcycle ride routes, speed, and distance.",
+        "NSLocationAlwaysAndWhenInUseUsageDescription": "Rideoxy uses background location while an active ride is recording so your route continues when your phone is locked or mounted.",
+        "NSLocationAlwaysUsageDescription": "Rideoxy uses your location in the background only while a ride is actively recording.",
         "ITSAppUsesNonExemptEncryption": false
       }
     },
@@ -53,7 +53,7 @@
       [
         "expo-location",
         {
-          "locationAlwaysAndWhenInUsePermission": "brovxi uses background location while an active ride is recording so your route continues when your phone is locked or mounted.",
+          "locationAlwaysAndWhenInUsePermission": "Rideoxy uses background location while an active ride is recording so your route continues when your phone is locked or mounted.",
           "isAndroidBackgroundLocationEnabled": true,
           "isAndroidForegroundServiceEnabled": true
         }

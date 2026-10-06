@@ -21,7 +21,7 @@ export const Wordmark: React.FC<WordmarkProps> = ({
       <Logo size={logoSize} />
       <View style={styles.textContainer}>
         <View style={styles.titleRow}>
-          <Text style={[styles.brandText, { fontSize: titleSize }]}>brovxi</Text>
+          <Text style={[styles.brandText, { fontSize: titleSize }]}>Rideoxy</Text>
           <View style={styles.accentDot} />
         </View>
         {showTagline && (

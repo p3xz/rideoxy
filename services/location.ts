@@ -38,7 +38,7 @@ export async function requestLocationPermissions(): Promise<LocationPermissionSt
     const background = await Location.requestBackgroundPermissionsAsync();
     backgroundGranted = background.granted;
   } catch (err) {
-    console.warn('[brovxi] Background permission request skipped or unavailable:', err);
+    console.warn('[rideoxy] Background permission request skipped or unavailable:', err);
   }
 
   return {
@@ -64,7 +64,7 @@ export async function getCurrentGPSFix(): Promise<RawGPSPoint | null> {
       timestamp: location.timestamp,
     };
   } catch (err) {
-    console.warn('[brovxi] Failed to get initial GPS fix:', err);
+    console.warn('[rideoxy] Failed to get initial GPS fix:', err);
     return null;
   }
 }
@@ -88,7 +88,7 @@ export async function startBackgroundLocationTracking(): Promise<boolean> {
     }
     return true;
   } catch (err) {
-    console.warn('[brovxi] Could not start background location updates:', err);
+    console.warn('[rideoxy] Could not start background location updates:', err);
     return false;
   }
 }
@@ -100,7 +100,7 @@ export async function stopBackgroundLocationTracking(): Promise<void> {
       await Location.stopLocationUpdatesAsync(BACKGROUND_LOCATION_TASK);
     }
   } catch (err) {
-    console.warn('[brovxi] Error stopping background location updates:', err);
+    console.warn('[rideoxy] Error stopping background location updates:', err);
   }
 }
 

@@ -43,7 +43,7 @@ export default function GarageScreen() {
       setTotalKm(stats.totalDistanceKm);
       setTotalRides(stats.totalRidesCount);
     } catch (err) {
-      console.error('[brovxi] Error loading garage data:', err);
+      console.error('[rideoxy] Error loading garage data:', err);
     }
   }, []);
 

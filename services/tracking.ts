@@ -80,7 +80,7 @@ class TrackingService {
       try {
         listener(currentState);
       } catch (err) {
-        console.error('[brovxi] Error in tracking listener:', err);
+        console.error('[rideoxy] Error in tracking listener:', err);
       }
     });
   }
@@ -137,7 +137,7 @@ class TrackingService {
       }
       return null;
     } catch (err) {
-      console.warn('[brovxi] Error checking for active ride:', err);
+      console.warn('[rideoxy] Error checking for active ride:', err);
       return null;
     }
   }
@@ -196,7 +196,7 @@ class TrackingService {
           });
         }
       } catch (dbErr) {
-        console.error('[brovxi] [TrackingService] Database failure while creating ride record:', dbErr);
+        console.error('[rideoxy] [TrackingService] Database failure while creating ride record:', dbErr);
         this.state.status = 'idle';
         this.notifyListeners(true);
         return {
@@ -248,7 +248,7 @@ class TrackingService {
           this.handleIncomingGPSPoints([point]);
         });
       } catch (locErr) {
-        console.error('[brovxi] [TrackingService] Location tracking service error:', locErr);
+        console.error('[rideoxy] [TrackingService] Location tracking service error:', locErr);
         this.stopDurationTimer();
         this.state.status = 'idle';
         this.notifyListeners(true);
@@ -263,7 +263,7 @@ class TrackingService {
       return { success: true };
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : String(err);
-      console.error('[brovxi] [TrackingService] Unexpected error in startRide:', err);
+      console.error('[rideoxy] [TrackingService] Unexpected error in startRide:', err);
       this.stopDurationTimer();
       this.state.status = 'idle';
       this.notifyListeners(true);
@@ -449,12 +449,6 @@ class TrackingService {
         this.state.currentSpeedKmh = 0;
         this.state.lastUpdated = now;
 
-        console.log('[GPS RE-ANCHOR]', {
-          timestamp: point.timestamp,
-          latitude: point.latitude,
-          longitude: point.longitude,
-          message: 'GPS resumed from stale period. Re-anchored baseline with zero distance/time delta.',
-        });
 
         // Add re-anchor coordinate for map display
         this.state.routeCoordinates.push([point.longitude, point.latitude]);
@@ -474,7 +468,7 @@ class TrackingService {
         try {
           await insertTrackPoint(trackPoint);
         } catch (err) {
-          console.error('[brovxi] Failed to insert re-anchor trackpoint:', err);
+          console.error('[rideoxy] Failed to insert re-anchor trackpoint:', err);
         }
 
         continue;
@@ -483,12 +477,6 @@ class TrackingService {
       const validation = validateGPSPoint(point, this.lastRecordedPoint);
 
       if (!validation.isValid) {
-        console.log('[GPS REJECTED]', {
-          reason: validation.reason,
-          timestamp: point.timestamp,
-          coordsSpeed: point.speed,
-          calculatedSegmentDistance: validation.segmentDistanceMeters,
-        });
 
         if (point.accuracy && point.accuracy > GPS_CONFIG.MAX_ACCEPTABLE_ACCURACY_METERS) {
           this.state.gpsSignalState = 'poor';
@@ -522,17 +510,6 @@ class TrackingService {
         this.state.lastUpdated = now;
         this.lastRecordedPoint = point;
 
-        console.log('[GPS SEGMENT]', {
-          distance: `${segmentDistanceKm.toFixed(4)} km`,
-          duration: `${segmentDurationSec.toFixed(2)} sec`,
-          calculatedSpeed: `${calculatedSpeedKmh.toFixed(2)} km/h`,
-          reportedSpeed: `${reportedSpeedKmh.toFixed(2)} km/h`,
-          movementAccepted: false,
-          totalDistance: `${this.state.currentDistanceKm.toFixed(4)} km`,
-          movingTime: `${this.state.currentMovingTimeSeconds.toFixed(2)} sec`,
-          averageSpeed: `${this.state.currentAvgSpeedKmh.toFixed(2)} km/h`,
-          maxSpeed: `${this.state.currentMaxSpeedKmh.toFixed(2)} km/h`,
-        });
 
         continue;
       }
@@ -558,17 +535,6 @@ class TrackingService {
         this.state.currentAvgSpeedKmh = calculatedAvg;
       }
 
-      console.log('[GPS SEGMENT]', {
-        distance: `${segmentDistanceKm.toFixed(4)} km`,
-        duration: `${segmentDurationSec.toFixed(2)} sec`,
-        calculatedSpeed: `${calculatedSpeedKmh.toFixed(2)} km/h`,
-        reportedSpeed: `${reportedSpeedKmh.toFixed(2)} km/h`,
-        movementAccepted: true,
-        totalDistance: `${this.state.currentDistanceKm.toFixed(4)} km`,
-        movingTime: `${this.state.currentMovingTimeSeconds.toFixed(2)} sec`,
-        averageSpeed: `${this.state.currentAvgSpeedKmh.toFixed(2)} km/h`,
-        maxSpeed: `${this.state.currentMaxSpeedKmh.toFixed(2)} km/h`,
-      });
 
       // Append coordinate to route for map display
       this.state.routeCoordinates.push([point.longitude, point.latitude]);
@@ -590,7 +556,7 @@ class TrackingService {
       try {
         await insertTrackPoint(trackPoint);
       } catch (err) {
-        console.error('[brovxi] Failed to insert trackpoint:', err);
+        console.error('[rideoxy] Failed to insert trackpoint:', err);
       }
 
       this.lastRecordedPoint = point;

@@ -27,10 +27,10 @@ export async function generateGPXString(ride: Ride, trackPoints: TrackPoint[]): 
     .join('\n');
 
   return `<?xml version="1.0" encoding="UTF-8"?>
-<gpx version="1.1" creator="brovxi - Motorcycle Ride Tracker" xmlns="http://www.topografix.com/GPX/1/1" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.topografix.com/GPX/1/1 http://www.topografix.com/GPX/1/1/gpx.xsd">
+<gpx version="1.1" creator="Rideoxy - Motorcycle Ride Tracker" xmlns="http://www.topografix.com/GPX/1/1" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.topografix.com/GPX/1/1 http://www.topografix.com/GPX/1/1/gpx.xsd">
   <metadata>
-    <name>brovxi Ride - ${formattedDate}</name>
-    <desc>Motorcycle ride tracked with brovxi. Distance: ${ride.distance.toFixed(1)} km, Moving Time: ${Math.round(ride.moving_time / 60)} min, Top Speed: ${Math.round(ride.max_speed)} km/h.</desc>
+    <name>Rideoxy Ride - ${formattedDate}</name>
+    <desc>Motorcycle ride tracked with Rideoxy. Distance: ${ride.distance.toFixed(1)} km, Moving Time: ${Math.round(ride.moving_time / 60)} min, Top Speed: ${Math.round(ride.max_speed)} km/h.</desc>
     <time>${rideDate}</time>
   </metadata>
   <trk>
@@ -52,7 +52,7 @@ export async function exportRideToGPX(ride: Ride): Promise<{ success: boolean; f
 
     const gpxContent = await generateGPXString(ride, trackPoints);
     const dateFormatted = new Date(ride.start_time).toISOString().replace(/[:.]/g, '-');
-    const fileName = `brovxi_ride_${dateFormatted}.gpx`;
+    const fileName = `rideoxy_ride_${dateFormatted}.gpx`;
     const gpxFile = new File(Paths.cache, fileName);
 
     await gpxFile.write(gpxContent);
@@ -61,7 +61,7 @@ export async function exportRideToGPX(ride: Ride): Promise<{ success: boolean; f
     if (isAvailable) {
       await Sharing.shareAsync(gpxFile.uri, {
         mimeType: 'application/gpx+xml',
-        dialogTitle: `Export brovxi Ride (${ride.distance.toFixed(1)} km)`,
+        dialogTitle: `Export Rideoxy Ride (${ride.distance.toFixed(1)} km)`,
         UTI: 'com.topografix.gpx',
       });
       return { success: true, filePath: gpxFile.uri };

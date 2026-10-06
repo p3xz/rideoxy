@@ -57,8 +57,8 @@ export default function SettingsScreen() {
 
   const showLocationUsageInfo = () => {
     Alert.alert(
-      'Location Precision in Brovxi',
-      'Brovxi uses precise device GPS location while a ride is being recorded. Background location is active solely during a recording session so your telemetry continues uninterrupted when your phone screen is off or mounted.'
+      'Location Precision in Rideoxy',
+      'Rideoxy uses precise device GPS location while a ride is being recorded. Background location is active solely during a recording session so your telemetry continues uninterrupted when your phone screen is off or mounted.'
     );
   };
 

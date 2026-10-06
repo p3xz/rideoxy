@@ -13,7 +13,7 @@ export function registerLocationUpdateCallback(callback: LocationUpdateCallback 
 
 TaskManager.defineTask(BACKGROUND_LOCATION_TASK, async ({ data, error }) => {
   if (error) {
-    console.warn('[brovxi] Background location task error:', error.message);
+    console.warn('[rideoxy] Background location task error:', error.message);
     return;
   }
 

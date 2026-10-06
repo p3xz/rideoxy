@@ -1,5 +1,5 @@
 /**
- * Centralized GPS parameters and thresholds for brovxi
+ * Centralized GPS parameters and thresholds for Rideoxy
  * Designed to preserve real motorcycle ride telemetry while filtering out spikes and stale fixes.
  */
 
@@ -40,6 +40,6 @@ export const GPS_CONFIG = {
   GPS_SIGNAL_TIMEOUT_MS: 4000,
 
   // Notification for Android background service
-  BACKGROUND_NOTIFICATION_TITLE: 'Brovxi Active Ride',
+  BACKGROUND_NOTIFICATION_TITLE: 'Rideoxy Active Ride',
   BACKGROUND_NOTIFICATION_BODY: 'Recording motorcycle telemetry in background...',
 };

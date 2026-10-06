@@ -87,7 +87,7 @@ export default function FuelScreen() {
       const stats = computeFuelSummary(derived, loadedPrefs.currency);
       setSummary(stats);
     } catch (err) {
-      console.error('[brovxi] Error loading fuel data:', err);
+      console.error('[rideoxy] Error loading fuel data:', err);
     }
   }, [vehicleId]);
 

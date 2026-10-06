@@ -68,7 +68,7 @@ export default function LicensesScreen() {
         showsVerticalScrollIndicator={false}
       >
         <Text style={styles.leadText}>
-          Brovxi is built with the following open-source software libraries and map services:
+          Rideoxy is built with the following open-source software libraries and map services:
         </Text>
 
         {/* Developer Credit Card */}
