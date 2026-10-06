@@ -1,15 +1,15 @@
 {
   "expo": {
     "name": "Rideoxy",
-    "slug": "brovxi",
+    "slug": "rideoxy",
     "version": "1.0.0",
-    "scheme": "brovxi",
+    "scheme": "rideoxy",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "dark",
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.brovxi.app",
+      "bundleIdentifier": "com.rideoxy.app",
       "infoPlist": {
         "UIBackgroundModes": [
           "location"
@@ -21,7 +21,7 @@
       }
     },
     "android": {
-      "package": "com.brovxi.app",
+      "package": "com.rideoxy.app",
       "adaptiveIcon": {
         "backgroundColor": "#090C0E",
         "foregroundImage": "./assets/android-icon-foreground.png",

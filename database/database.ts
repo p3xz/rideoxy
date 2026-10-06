@@ -10,7 +10,7 @@ import {
 let dbPromise: Promise<SQLite.SQLiteDatabase> | null = null;
 let dbInstance: SQLite.SQLiteDatabase | null = null;
 
-export const DB_NAME = 'brovxi.db';
+export const DB_NAME = 'rideoxy.db';
 
 export async function getDatabase(): Promise<SQLite.SQLiteDatabase> {
   if (dbInstance) {

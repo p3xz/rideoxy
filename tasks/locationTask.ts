@@ -2,7 +2,7 @@ import * as TaskManager from 'expo-task-manager';
 import * as Location from 'expo-location';
 import { RawGPSPoint } from '../types/ride';
 
-export const BACKGROUND_LOCATION_TASK = 'brovxi_background_location_task';
+export const BACKGROUND_LOCATION_TASK = 'rideoxy_background_location_task';
 
 type LocationUpdateCallback = (points: RawGPSPoint[]) => void;
 let globalLocationCallback: LocationUpdateCallback | null = null;

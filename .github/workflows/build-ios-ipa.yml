@@ -82,8 +82,8 @@ jobs:
           DERIVED="$RUNNER_TEMP/DerivedData"
 
           xcodebuild \
-            -workspace ios/brovxi.xcworkspace \
-            -scheme brovxi \
+            -workspace ios/Rideoxy.xcworkspace \
+            -scheme Rideoxy \
             -configuration Release \
             -destination 'generic/platform=iOS' \
             -derivedDataPath "$DERIVED" \
@@ -100,7 +100,7 @@ jobs:
       # ── 9. Critical Validation: inspect .app ───────────────────────────────
       - name: Validate .app bundle and contents
         run: |
-          APP="$RUNNER_TEMP/DerivedData/Build/Products/Release-iphoneos/brovxi.app"
+          APP="$RUNNER_TEMP/DerivedData/Build/Products/Release-iphoneos/Rideoxy.app"
 
           echo "=== 1. Checking .app directory ==="
           if [ ! -d "$APP" ]; then
@@ -129,11 +129,11 @@ jobs:
           fi
 
           echo "=== 3. Checking native Mach-O executable ==="
-          if [ ! -f "$APP/brovxi" ]; then
-            echo "❌ Fatal: Main binary 'brovxi' not found in $APP!"
+          if [ ! -f "$APP/Rideoxy" ]; then
+            echo "❌ Fatal: Main binary 'Rideoxy' not found in $APP!"
             exit 1
           fi
-          file "$APP/brovxi"
+          file "$APP/Rideoxy"
 
           echo "=== 4. Checking JavaScript / Hermes application bundle ==="
           if [ ! -f "$APP/main.jsbundle" ]; then
@@ -162,17 +162,17 @@ jobs:
       # ── 10. Package into .ipa ──────────────────────────────────────────────
       - name: Package .app into .ipa
         run: |
-          APP="$RUNNER_TEMP/DerivedData/Build/Products/Release-iphoneos/brovxi.app"
+          APP="$RUNNER_TEMP/DerivedData/Build/Products/Release-iphoneos/Rideoxy.app"
           mkdir -p "$RUNNER_TEMP/ipa/Payload"
-          cp -r "$APP" "$RUNNER_TEMP/ipa/Payload/brovxi.app"
+          cp -r "$APP" "$RUNNER_TEMP/ipa/Payload/Rideoxy.app"
           cd "$RUNNER_TEMP/ipa"
-          zip -qr brovxi.ipa Payload
+          zip -qr rideoxy.ipa Payload
 
           echo "=== IPA Size ==="
-          du -sh brovxi.ipa
-          ls -lh brovxi.ipa
+          du -sh rideoxy.ipa
+          ls -lh rideoxy.ipa
 
-          IPA_SIZE_KB=$(du -sk brovxi.ipa | awk '{print $1}')
+          IPA_SIZE_KB=$(du -sk rideoxy.ipa | awk '{print $1}')
           if [ "$IPA_SIZE_KB" -lt 10000 ]; then
             echo "❌ Error: Resulting IPA size (${IPA_SIZE_KB} KB) is under 10 MB!"
             echo "Expected a complete application package (typically 30-80 MB)."
@@ -184,7 +184,7 @@ jobs:
       - name: Upload IPA artifact
         uses: actions/upload-artifact@v4
         with:
-          name: brovxi-ios-ipa
-          path: ${{ runner.temp }}/ipa/brovxi.ipa
+          name: rideoxy-ios-ipa
+          path: ${{ runner.temp }}/ipa/rideoxy.ipa
           retention-days: 7
           if-no-files-found: error
