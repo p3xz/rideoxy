@@ -1,8 +1,8 @@
-# Brovxi 🏍️
+# Rideoxy 🏍️
 
 > **Privacy-first, offline-ready motorcycle ride tracking and fuel telemetry app.**
 
-Brovxi is a mobile application built for motorcyclists. Track your rides, monitor speeds and lean angles, analyze fuel efficiency, record maintenance logs, and export your GPX routes — all with complete privacy and zero mandatory cloud accounts.
+Rideoxy is a mobile application built for motorcyclists. Track your rides, monitor speeds and lean angles, analyze fuel efficiency, record maintenance logs, and export your GPX routes — all with complete privacy and zero mandatory cloud accounts.
 
 ---
 
@@ -39,8 +39,8 @@ Brovxi is a mobile application built for motorcyclists. Track your rides, monito
 
 1. Clone the repository:
    ```bash
-   git clone https://github.com/p3xz/brovxi.git
-   cd brovxi
+   git clone https://github.com/p3xz/rideoxy.git
+   cd rideoxy
    ```
 
 2. Install dependencies:
@@ -57,14 +57,14 @@ Brovxi is a mobile application built for motorcyclists. Track your rides, monito
 
 ## 📱 Building for iOS (100% Free / No Paid Apple Developer Account)
 
-You do not need a paid $99/year Apple Developer account to build and run Brovxi on your iPhone from Windows.
+You do not need a paid $99/year Apple Developer account to build and run Rideoxy on your iPhone from Windows.
 
 ### Method 1: Automated GitHub Actions (.ipa Build)
 1. Push your changes to GitHub.
 2. Go to the **Actions** tab in your GitHub repository.
 3. Select the **`Build iOS IPA (Free / No Apple Dev Account)`** workflow.
 4. Click **Run workflow** on the `master` branch.
-5. Once the build completes, download the **`brovxi-ios-ipa`** artifact.
+5. Once the build completes, download the **`rideoxy-ios-ipa`** artifact.
 6. Connect your iPhone to your Windows PC via USB and install using **[Sideloadly](https://sideloadly.io/)** with your free personal Apple ID.
 
 ### Method 2: EAS iOS Simulator Build
