@@ -2,7 +2,17 @@
 
 > **Privacy-first, offline-ready motorcycle ride tracking and fuel telemetry app.**
 
+## What
+
 Rideoxy is a mobile application built for motorcyclists. Track your rides, monitor speeds, analyze fuel efficiency, record maintenance logs, and export your GPX routes, all with complete privacy and zero mandatory cloud accounts.
+
+## Why
+
+Built as a personal project: a privacy-first alternative to cloud-locked ride trackers, made for motorcyclists who want their ride data to stay on their own phone.
+
+## When
+
+September 2026.
 
 ---
 
@@ -17,7 +27,7 @@ Rideoxy is a mobile application built for motorcyclists. Track your rides, monit
 
 ---
 
-## Tech Stack
+## What We Used
 
 - **Language**: TypeScript
 - **Framework**: [Expo](https://expo.dev/) (SDK 54) and [React Native](https://reactnative.dev/) (0.81)
@@ -25,7 +35,30 @@ Rideoxy is a mobile application built for motorcyclists. Track your rides, monit
 - **Maps**: [@maplibre/maplibre-react-native](https://github.com/maplibre/maplibre-react-native)
 - **Database**: [Expo SQLite](https://docs.expo.dev/versions/latest/sdk/sqlite/)
 - **Background GPS**: [Expo Location](https://docs.expo.dev/versions/latest/sdk/location/) and [Expo TaskManager](https://docs.expo.dev/versions/latest/sdk/task-manager/)
+- **File Export and Sharing**: Expo FileSystem and Expo Sharing
 - **Animations and UI**: React Native Reanimated, Lucide Icons, Safe Area Context
+
+## Why We Used This
+
+- **Expo**: one codebase that builds for both iOS and Android, with managed native modules for the features the app depends on.
+- **Expo Location + TaskManager**: keep GPS logging alive in the background while you ride, even with the screen off.
+- **Expo SQLite**: all rides, track points, fuel logs, and settings stay in an on-device database, which is what makes the app fully private with no server or account needed.
+- **MapLibre GL Native**: vector maps that render recorded routes and work with offline map tiles.
+- **TypeScript**: type safety across screens, repositories, and services so GPS data shapes stay consistent.
+- **Expo FileSystem + Expo Sharing**: write GPX files to the device and open them in Google Earth, Strava, or Garmin.
+- **React Native Reanimated**: smooth animations on the live speed HUD and charts.
+
+---
+
+## How It Works
+
+- **Start a ride** from the home tab. The live HUD screen (`app/active-ride.tsx`) shows your speed and current position on the map.
+- **Background tracking** runs through an Expo TaskManager location task (`tasks/locationTask.ts`), which keeps recording GPS points while you ride, screen on or off.
+- **Filtering and math** happen in `services/`: `gpsFilter` cleans noisy fixes, `distance` computes segment distances with the Haversine formula, and `fuelCalculation` derives mileage and cost per km.
+- **Everything is stored locally** in SQLite through the repository layer in `database/` (rides, track points, fuel entries, garage records, settings).
+- **Stats and History tabs** aggregate lifetime distance, top speeds, average speeds, and monthly breakdowns from the stored data.
+- **Fuel tab** logs fill-ups and computes mileage (km/L and MPG), cost per km, and service reminders.
+- **Export** turns any recorded ride into a standard `.gpx` file that you can share or import elsewhere.
 
 ---
 
@@ -103,7 +136,7 @@ npx eas-cli build --platform android --profile preview
 
 ---
 
-## Developer
+## Credits
 
 **Namish Yadav**
 - GitHub: [https://github.com/p3xz](https://github.com/p3xz)
