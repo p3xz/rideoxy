@@ -1,34 +1,35 @@
-# Rideoxy 🏍️
+# Rideoxy
 
 > **Privacy-first, offline-ready motorcycle ride tracking and fuel telemetry app.**
 
-Rideoxy is a mobile application built for motorcyclists. Track your rides, monitor speeds and lean angles, analyze fuel efficiency, record maintenance logs, and export your GPX routes — all with complete privacy and zero mandatory cloud accounts.
+Rideoxy is a mobile application built for motorcyclists. Track your rides, monitor speeds, analyze fuel efficiency, record maintenance logs, and export your GPX routes, all with complete privacy and zero mandatory cloud accounts.
 
 ---
 
-## 🌟 Features
+## Features
 
-- **📍 Precision Ride Tracking**: Background GPS logging with noise filtering, accurate distance calculation (Haversine algorithm), and speed analysis.
-- **🗺️ Offline-Ready Maps**: Vector map rendering powered by MapLibre GL Native.
-- **⛽ Fuel & Maintenance Log**: Track fill-ups, calculate mileage (km/L & MPG), cost per km, and service intervals.
-- **📊 Comprehensive Statistics**: Lifetime distance, top speeds, average speeds, monthly breakdowns, and ride history.
-- **📁 GPX Route Export**: Export any recorded ride to standard `.gpx` files to share or import into Google Earth, Strava, or Garmin.
-- **🔒 100% Local & Private**: All ride data, track points, and garage records are stored locally using SQLite on your device.
+- **Precision Ride Tracking**: Background GPS logging with noise filtering, accurate distance calculation (Haversine algorithm), and speed analysis.
+- **Offline-Ready Maps**: Vector map rendering powered by MapLibre GL Native.
+- **Fuel and Maintenance Log**: Track fill-ups, calculate mileage (km/L and MPG), cost per km, and service intervals.
+- **Comprehensive Statistics**: Lifetime distance, top speeds, average speeds, monthly breakdowns, and ride history.
+- **GPX Route Export**: Export any recorded ride to standard `.gpx` files to share or import into Google Earth, Strava, or Garmin.
+- **100% Local and Private**: All ride data, track points, and garage records are stored locally using SQLite on your device.
 
 ---
 
-## 🛠️ Tech Stack
+## Tech Stack
 
-- **Framework**: [Expo](https://expo.dev/) (SDK 54) & [React Native](https://reactnative.dev/) (0.81)
+- **Language**: TypeScript
+- **Framework**: [Expo](https://expo.dev/) (SDK 54) and [React Native](https://reactnative.dev/) (0.81)
 - **Routing**: [Expo Router](https://docs.expo.dev/router/introduction/)
 - **Maps**: [@maplibre/maplibre-react-native](https://github.com/maplibre/maplibre-react-native)
 - **Database**: [Expo SQLite](https://docs.expo.dev/versions/latest/sdk/sqlite/)
-- **Background GPS**: [Expo Location](https://docs.expo.dev/versions/latest/sdk/location/) & [Expo TaskManager](https://docs.expo.dev/versions/latest/sdk/task-manager/)
-- **Animations & UI**: React Native Reanimated, Lucide Icons, Safe Area Context
+- **Background GPS**: [Expo Location](https://docs.expo.dev/versions/latest/sdk/location/) and [Expo TaskManager](https://docs.expo.dev/versions/latest/sdk/task-manager/)
+- **Animations and UI**: React Native Reanimated, Lucide Icons, Safe Area Context
 
 ---
 
-## 🚀 Getting Started
+## Getting Started
 
 ### Prerequisites
 - [Node.js](https://nodejs.org/) (v20+ recommended)
@@ -55,7 +56,7 @@ Rideoxy is a mobile application built for motorcyclists. Track your rides, monit
 
 ---
 
-## 📱 Building for iOS (100% Free / No Paid Apple Developer Account)
+## Building for iOS (100% Free, No Paid Apple Developer Account)
 
 You do not need a paid $99/year Apple Developer account to build and run Rideoxy on your iPhone from Windows.
 
@@ -75,7 +76,7 @@ npx eas-cli build --platform ios --profile simulator
 
 ---
 
-## 🤖 Building for Android
+## Building for Android
 
 Build a standalone APK or AAB for Android using EAS:
 ```bash
@@ -84,7 +85,7 @@ npx eas-cli build --platform android --profile preview
 
 ---
 
-## 📂 Project Structure
+## Project Structure
 
 ```
 ├── app/                  # Expo Router navigation and screens
@@ -102,7 +103,7 @@ npx eas-cli build --platform android --profile preview
 
 ---
 
-## 👨‍💻 Developer
+## Developer
 
 **Namish Yadav**
 - GitHub: [https://github.com/p3xz](https://github.com/p3xz)
@@ -111,6 +112,6 @@ npx eas-cli build --platform android --profile preview
 
 ---
 
-## 📄 License
+## License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
