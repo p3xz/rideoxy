@@ -1,5 +1,7 @@
 # Rideoxy
 
+![Preview](preview.png)
+
 > Privacy-first, offline-ready motorcycle ride tracking and fuel telemetry app.
 
 ![Status](https://img.shields.io/badge/status-active-brightgreen) ![License](https://img.shields.io/badge/license-MIT-blue)
