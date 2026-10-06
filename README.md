@@ -1,6 +1,8 @@
 # Rideoxy
 
-> **Privacy-first, offline-ready motorcycle ride tracking and fuel telemetry app.**
+> Privacy-first, offline-ready motorcycle ride tracking and fuel telemetry app.
+
+![Status](https://img.shields.io/badge/status-active-brightgreen) ![License](https://img.shields.io/badge/license-MIT-blue)
 
 ## What
 
@@ -27,7 +29,7 @@ September 2026.
 
 ---
 
-## What We Used
+## Tech Stack
 
 ![TypeScript](https://skillicons.dev/icons?i=ts) ![Expo](https://skillicons.dev/icons?i=expo) ![React](https://skillicons.dev/icons?i=react) ![SQLite](https://skillicons.dev/icons?i=sqlite) ![iOS](https://skillicons.dev/icons?i=ios) ![Android](https://skillicons.dev/icons?i=android)
 
@@ -40,7 +42,7 @@ September 2026.
 - **File Export and Sharing**: Expo FileSystem and Expo Sharing
 - **Animations and UI**: React Native Reanimated, Lucide Icons, Safe Area Context
 
-## Why We Used This
+### Why We Used This
 
 - **Expo**: one codebase that builds for both iOS and Android, with managed native modules for the features the app depends on.
 - **Expo Location + TaskManager**: keep GPS logging alive in the background while you ride, even with the screen off.
@@ -64,12 +66,14 @@ September 2026.
 
 ---
 
-## Getting Started
+## Quick Start
 
 ### Prerequisites
-- [Node.js](https://nodejs.org/) (v20+ recommended)
-- [npm](https://www.npmjs.com/) or [yarn](https://yarnpkg.com/)
-- [Expo CLI](https://docs.expo.dev/more/expo-cli/) (`npx expo`)
+
+- [Node.js](https://nodejs.org/) v20 or later (v20+ recommended)
+- [npm](https://www.npmjs.com/) (bundled with Node.js) or [yarn](https://yarnpkg.com/)
+- [Expo CLI](https://docs.expo.dev/more/expo-cli/) via `npx expo`
+- Expo SDK 54 and React Native 0.81, as pinned in `package.json`
 
 ### Installation
 
@@ -86,16 +90,27 @@ September 2026.
 
 3. Start the development server:
    ```bash
-   npm start
+   npx expo start
    ```
 
 ---
 
-## Building for iOS (100% Free, No Paid Apple Developer Account)
+## Usage
 
-You do not need a paid $99/year Apple Developer account to build and run Rideoxy on your iPhone from Windows.
+Start the development server and scan the QR code with Expo Go to run the app on your phone:
 
-### Method 1: Automated GitHub Actions (.ipa Build)
+```bash
+npx expo start
+```
+
+From the home tab, start a ride. The live HUD shows your speed and position on the map, and background tracking keeps recording GPS points while you ride.
+
+### Building for iOS (100% free, no paid Apple Developer account)
+
+You do not need a paid Apple Developer account to build and run Rideoxy on your iPhone from Windows.
+
+**Method 1: Automated GitHub Actions (.ipa build)**
+
 1. Push your changes to GitHub.
 2. Go to the **Actions** tab in your GitHub repository.
 3. Select the **`Build iOS IPA (Free / No Apple Dev Account)`** workflow.
@@ -103,19 +118,20 @@ You do not need a paid $99/year Apple Developer account to build and run Rideoxy
 5. Once the build completes, download the **`rideoxy-ios-ipa`** artifact.
 6. Connect your iPhone to your Windows PC via USB and install using **[Sideloadly](https://sideloadly.io/)** with your free personal Apple ID.
 
-### Method 2: EAS iOS Simulator Build
+**Method 2: EAS iOS simulator build**
+
 If testing on an iOS Simulator or macOS:
+
 ```bash
-npx eas-cli build --platform ios --profile simulator
+npx eas-cli build -p ios -e simulator
 ```
 
----
-
-## Building for Android
+### Building for Android
 
 Build a standalone APK or AAB for Android using EAS:
+
 ```bash
-npx eas-cli build --platform android --profile preview
+npx eas-cli build -p android -e preview
 ```
 
 ---
@@ -147,6 +163,12 @@ npx eas-cli build --platform android --profile preview
 
 ---
 
+## Contributing
+
+Issues and pull requests are welcome. Please keep changes small and focused, with clear commit messages.
+
+---
+
 ## License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
