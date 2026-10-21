@@ -1,12 +1,28 @@
 import { Coordinates, calculateDistanceMeters } from './distance';
 import { RideMode, EstimateSource } from '../types/ride';
 
-export const OLA_AUTOCOMPLETE_URL = 'https://api.olamaps.io/places/v1/autocomplete';
-export const OLA_GEOCODE_URL = 'https://api.olamaps.io/places/v1/geocode';
+/**
+ * Strict Outbound Endpoint Allowlist (Free-Only Rule):
+ * - Ola Directions: The ONE and ONLY Ola call permitted (Free tier up to 100K/mo).
+ * - Nominatim: OpenStreetMap geocoding on explicit rider submit only (Free).
+ * - OSRM: OpenStreetMap routing fallback (Free).
+ *
+ * ALL paid Ola Maps products (Places Autocomplete, Geocoding, Details, Roads)
+ * are strictly forbidden and blocked.
+ */
 export const OLA_DIRECTIONS_URL = 'https://api.olamaps.io/routing/v1/directions';
-
 export const NOMINATIM_BASE_URL = 'https://nominatim.openstreetmap.org/search';
 export const OSRM_BASE_URL = 'https://router.project-osrm.org/route/v1/driving';
+
+export const ALLOWED_OUTBOUND_ENDPOINTS = [
+  OLA_DIRECTIONS_URL,
+  NOMINATIM_BASE_URL,
+  OSRM_BASE_URL,
+] as const;
+
+export function isAllowedOutboundUrl(url: string): boolean {
+  return ALLOWED_OUTBOUND_ENDPOINTS.some((allowed) => url.startsWith(allowed));
+}
 
 export const USER_AGENT = 'Rideoxy/1.0';
 export const REQUEST_TIMEOUT_MS = 6000;
@@ -20,7 +36,7 @@ export interface GeocodeResult {
   state?: string;
   lat: number;
   lng: number;
-  source?: 'ola' | 'nominatim';
+  source?: 'nominatim' | 'pin';
 }
 
 export type GeocodeErrorType =
@@ -59,7 +75,7 @@ export type RouteResponse =
   | { success: true; estimate: RouteEstimate }
   | { success: false; error: RouteErrorType; message: string };
 
-/** Provider interface allowing Ola/OSRM/Nominatim to be substituted without altering UI or DB logic. */
+/** Provider interface allowing routing and search to be swapped cleanly without altering UI logic. */
 export interface EtaProvider {
   searchDestination(query: string, mode?: RideMode): Promise<GeocodeResponse>;
   fetchRoute(origin: Coordinates, destination: Coordinates, mode?: RideMode): Promise<RouteResponse>;
@@ -88,20 +104,13 @@ export function resetOlaCircuitBreaker(): void {
   isOlaCircuitBroken = false;
 }
 
-// Autocomplete in-memory cache for session (per query string)
-const autocompleteCache = new Map<string, GeocodeResult[]>();
-
-export function clearAutocompleteCache(): void {
-  autocompleteCache.clear();
-}
-
 /** Redacts sensitive API keys from logged strings or diagnostics */
 export function redactApiKey(urlOrString: string): string {
   return urlOrString.replace(/api_key=([^&]+)/gi, 'api_key=[REDACTED]');
 }
 
 /**
- * Fetch helper with AbortController timeout and optional single network-error retry.
+ * Fetch helper with AbortController timeout, allowlist validation, and single network retry.
  */
 async function fetchWithTimeoutAndRetry(
   url: string,
@@ -109,6 +118,11 @@ async function fetchWithTimeoutAndRetry(
   timeoutMs = REQUEST_TIMEOUT_MS,
   allowRetryOnNetworkError = false
 ): Promise<Response> {
+  // Enforce outbound endpoint allowlist at network boundary
+  if (!isAllowedOutboundUrl(url)) {
+    throw new Error(`[Rideoxy] [Security] Forbidden outbound URL blocked: ${url}`);
+  }
+
   const doFetch = async () => {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
@@ -135,136 +149,12 @@ async function fetchWithTimeoutAndRetry(
 }
 
 // ────────────────────────────────────────────────────────────────────────────
-// 1. Primary Provider: Ola Maps
+// 1. Primary Provider: Ola Maps (Directions Only - Free Tier)
 // ────────────────────────────────────────────────────────────────────────────
 
-export class OlaMapsProvider implements EtaProvider {
+export class OlaMapsProvider {
   private getApiKey(): string {
     return getOlaMapsApiKey();
-  }
-
-  async searchDestination(query: string, mode: RideMode = 'destination'): Promise<GeocodeResponse> {
-    if (mode !== 'destination') {
-      return { success: false, error: 'mode_guard', message: 'Destination search only runs in Destination mode.' };
-    }
-
-    const key = this.getApiKey();
-    if (!key || isOlaCircuitBroken) {
-      return { success: false, error: 'not_available', message: 'Ola Maps is not configured or circuit is broken.' };
-    }
-
-    const trimmed = query.trim();
-    if (trimmed.length < 3) {
-      return { success: false, error: 'not_found', message: 'Minimum 3 characters required.' };
-    }
-
-    // Check session cache
-    const cacheKey = trimmed.toLowerCase();
-    if (autocompleteCache.has(cacheKey)) {
-      return { success: true, results: autocompleteCache.get(cacheKey)! };
-    }
-
-    const url = `${OLA_AUTOCOMPLETE_URL}?input=${encodeURIComponent(trimmed)}&api_key=${encodeURIComponent(key)}`;
-
-    try {
-      const res = await fetchWithTimeoutAndRetry(
-        url,
-        {
-          method: 'GET',
-          headers: {
-            Accept: 'application/json',
-            'User-Agent': USER_AGENT,
-          },
-        },
-        REQUEST_TIMEOUT_MS,
-        true
-      );
-
-      // Circuit Breaker triggers: 429 (Rate Limit) or 401/403 (Auth Failure)
-      if (res.status === 429) {
-        tripOlaCircuitBreaker();
-        return { success: false, error: 'rate_limited', message: 'Ola Maps quota exhausted or rate limited.' };
-      }
-      if (res.status === 401 || res.status === 403) {
-        tripOlaCircuitBreaker();
-        return { success: false, error: 'auth_error', message: 'Ola Maps authentication failure.' };
-      }
-      if (!res.ok) {
-        return { success: false, error: 'network_error', message: `Ola Maps responded with status ${res.status}.` };
-      }
-
-      let data: any;
-      try {
-        data = await res.json();
-      } catch {
-        return { success: false, error: 'parse_error', message: 'Malformed response from Ola Maps.' };
-      }
-
-      const predictions = data?.predictions;
-      if (!Array.isArray(predictions) || predictions.length === 0) {
-        return { success: false, error: 'not_found', message: 'No suggestions found.' };
-      }
-
-      // Cap at 5 suggestions
-      const capped = predictions.slice(0, 5);
-      const results: GeocodeResult[] = [];
-
-      for (const p of capped) {
-        const description: string = p.description || '';
-        const mainText: string = p.structured_formatting?.main_text || description.split(',')[0].trim() || 'Destination';
-        const secondaryText: string = p.structured_formatting?.secondary_text || '';
-
-        // Extract district and state from secondary text
-        const secParts = secondaryText.split(',').map((s) => s.trim()).filter(Boolean);
-        const state = secParts.length > 1 ? secParts[secParts.length - 2] : secParts[0] || undefined;
-        const district = secParts.length > 2 ? secParts[0] : undefined;
-
-        let lat = p.geometry?.location?.lat;
-        let lng = p.geometry?.location?.lng ?? p.geometry?.location?.lon;
-
-        // If coordinates missing in autocomplete prediction, geocode place description
-        if (typeof lat !== 'number' || typeof lng !== 'number') {
-          try {
-            const geoUrl = `${OLA_GEOCODE_URL}?address=${encodeURIComponent(description)}&api_key=${encodeURIComponent(key)}`;
-            const geoRes = await fetchWithTimeoutAndRetry(geoUrl, { method: 'GET' }, 3000, false);
-            if (geoRes.ok) {
-              const geoData = await geoRes.json();
-              const first = geoData?.geocodingResults?.[0] || geoData?.results?.[0];
-              lat = first?.geometry?.location?.lat;
-              lng = first?.geometry?.location?.lng ?? first?.geometry?.location?.lon;
-            }
-          } catch {
-            // If geocode fails, continue with fallback
-          }
-        }
-
-        if (typeof lat === 'number' && typeof lng === 'number' && !isNaN(lat) && !isNaN(lng)) {
-          results.push({
-            place_id: p.place_id || `${lat},${lng}`,
-            name: mainText,
-            display_name: description,
-            district,
-            state,
-            lat,
-            lng,
-            source: 'ola',
-          });
-        }
-      }
-
-      if (results.length === 0) {
-        return { success: false, error: 'not_found', message: 'Could not resolve place coordinates.' };
-      }
-
-      // Cache for session
-      autocompleteCache.set(cacheKey, results);
-      return { success: true, results };
-    } catch (err: any) {
-      if (err?.name === 'AbortError') {
-        return { success: false, error: 'timeout', message: 'Ola Maps search timed out after 6 seconds.' };
-      }
-      return { success: false, error: 'network_error', message: 'Could not connect to Ola Maps.' };
-    }
   }
 
   async fetchRoute(
@@ -281,7 +171,7 @@ export class OlaMapsProvider implements EtaProvider {
       return { success: false, error: 'not_available', message: 'Ola Maps is not configured or circuit is broken.' };
     }
 
-    // Directions API: origin=lat,lng&destination=lat,lng
+    // Directions API: origin=lat,lng&destination=lat,lng (Free tier up to 100K calls/mo)
     const url = `${OLA_DIRECTIONS_URL}?origin=${origin.latitude},${origin.longitude}&destination=${destination.latitude},${destination.longitude}&mode=driving&api_key=${encodeURIComponent(key)}`;
 
     try {
@@ -299,7 +189,7 @@ export class OlaMapsProvider implements EtaProvider {
         true
       );
 
-      // Circuit Breaker triggers: 429 or 401/403
+      // Circuit Breaker triggers: 429 (Rate Limit) or 401/403 (Auth Failure)
       if (res.status === 429) {
         tripOlaCircuitBreaker();
         return { success: false, error: 'rate_limited', message: 'Ola Maps routing rate limited.' };
@@ -319,7 +209,6 @@ export class OlaMapsProvider implements EtaProvider {
         return { success: false, error: 'parse_error', message: 'Malformed response from Ola Maps routing.' };
       }
 
-      // Check routes
       const routes = data?.routes;
       if (!Array.isArray(routes) || routes.length === 0) {
         return { success: false, error: 'no_route', message: 'No road route found to destination.' };
@@ -377,7 +266,7 @@ export class OlaMapsProvider implements EtaProvider {
 }
 
 // ────────────────────────────────────────────────────────────────────────────
-// 2. Fallback Provider: OpenStreetMap Nominatim + OSRM
+// 2. Free Fallback Provider: OpenStreetMap Nominatim + OSRM
 // ────────────────────────────────────────────────────────────────────────────
 
 export class OsrmNominatimProvider implements EtaProvider {
@@ -416,14 +305,14 @@ export class OsrmNominatimProvider implements EtaProvider {
           },
         },
         REQUEST_TIMEOUT_MS,
-        true // Allow 1 retry on network error
+        true
       );
 
       if (res.status === 429) {
         return {
           success: false,
           error: 'rate_limited',
-          message: 'Destination search is temporarily busy. You can enter expected minutes manually.',
+          message: 'Destination search is temporarily busy. You can drop a pin or enter minutes manually.',
         };
       }
 
@@ -431,7 +320,7 @@ export class OsrmNominatimProvider implements EtaProvider {
         return {
           success: false,
           error: 'network_error',
-          message: `Location service responded with status ${res.status}. You can enter minutes manually.`,
+          message: `Location service responded with status ${res.status}. You can drop a pin on the map.`,
         };
       }
 
@@ -450,27 +339,22 @@ export class OsrmNominatimProvider implements EtaProvider {
         return {
           success: false,
           error: 'not_found',
-          message: 'Destination not found. Check spelling, try a nearby town, or enter minutes manually.',
+          message: 'No places found matching your search. Try dropping a pin on the map instead.',
         };
       }
 
       const results: GeocodeResult[] = data.map((item: any) => {
-        const addr = item.address || {};
-        const parts = (item.display_name || '').split(',').map((p: string) => p.trim());
-        const primaryName = item.name || parts[0] || 'Unknown Place';
-        const district =
-          addr.county ||
-          addr.state_district ||
-          addr.city_district ||
-          (parts.length > 2 ? parts[parts.length - 3] : undefined);
-        const state = addr.state || (parts.length > 1 ? parts[parts.length - 2] : undefined);
+        const address = item.address || {};
+        const district = address.county || address.state_district || address.district;
+        const state = address.state;
+        const name = item.name || item.display_name?.split(',')[0]?.trim() || 'Destination';
 
         return {
           place_id: item.place_id || `${item.lat},${item.lon}`,
-          name: primaryName,
-          display_name: item.display_name,
-          district: district || undefined,
-          state: state || undefined,
+          name,
+          display_name: item.display_name || name,
+          district,
+          state,
           lat: parseFloat(item.lat),
           lng: parseFloat(item.lon),
           source: 'nominatim',
@@ -486,13 +370,13 @@ export class OsrmNominatimProvider implements EtaProvider {
         return {
           success: false,
           error: 'timeout',
-          message: 'Search timed out after 6 seconds. You can enter minutes manually.',
+          message: 'Search request timed out after 6 seconds. You can drop a pin on the map.',
         };
       }
       return {
         success: false,
         error: 'network_error',
-        message: 'Could not connect to location services. You can enter minutes manually or switch to Free Ride.',
+        message: 'Could not connect to destination search. You can drop a pin on the map.',
       };
     }
   }
@@ -528,7 +412,7 @@ export class OsrmNominatimProvider implements EtaProvider {
           },
         },
         REQUEST_TIMEOUT_MS,
-        true // Allow 1 retry on network error ONLY
+        true
       );
 
       if (res.status === 429) {
@@ -558,7 +442,6 @@ export class OsrmNominatimProvider implements EtaProvider {
         };
       }
 
-      // Check OSRM code
       if (data.code !== 'Ok' || !Array.isArray(data.routes) || data.routes.length === 0) {
         return {
           success: false,
@@ -571,7 +454,6 @@ export class OsrmNominatimProvider implements EtaProvider {
       const durationSec = primaryRoute.duration;
       const distanceM = primaryRoute.distance;
 
-      // Sanity check: duration must be positive and finite
       if (!Number.isFinite(durationSec) || durationSec <= 0) {
         return {
           success: false,
@@ -580,11 +462,10 @@ export class OsrmNominatimProvider implements EtaProvider {
         };
       }
 
-      // Snapped waypoint sanity check (compare snapped coordinates with requested)
       let isLowTrust = false;
       if (Array.isArray(data.waypoints) && data.waypoints.length >= 2) {
-        const originSnapped = data.waypoints[0].location; // [lng, lat]
-        const destSnapped = data.waypoints[1].location; // [lng, lat]
+        const originSnapped = data.waypoints[0].location;
+        const destSnapped = data.waypoints[1].location;
 
         if (Array.isArray(originSnapped) && Array.isArray(destSnapped)) {
           const originGap = calculateDistanceMeters(origin, {
@@ -629,7 +510,7 @@ export class OsrmNominatimProvider implements EtaProvider {
 }
 
 // ────────────────────────────────────────────────────────────────────────────
-// 3. Fallback Chain Provider (Ola Maps -> Nominatim/OSRM)
+// 3. Fallback Chain Provider (Ola Directions -> OSRM)
 // ────────────────────────────────────────────────────────────────────────────
 
 export class FallbackEtaProvider implements EtaProvider {
@@ -637,20 +518,7 @@ export class FallbackEtaProvider implements EtaProvider {
   private osrm = new OsrmNominatimProvider();
 
   async searchDestination(query: string, mode: RideMode = 'destination'): Promise<GeocodeResponse> {
-    if (mode !== 'destination') {
-      return { success: false, error: 'mode_guard', message: 'Destination search only runs in Destination mode.' };
-    }
-
-    // Attempt 1: Ola Maps (if key present and circuit unbroken)
-    if (getOlaMapsApiKey() && !isOlaCircuitBroken) {
-      const olaRes = await this.ola.searchDestination(query, mode);
-      if (olaRes.success && olaRes.results.length > 0) {
-        return olaRes;
-      }
-      // If Ola fails (auth, 429, timeout, network), fall through to Nominatim
-    }
-
-    // Attempt 2: OpenStreetMap Nominatim
+    // Search is 100% free via Nominatim submit-search. No Ola search calls ever.
     return this.osrm.searchDestination(query, mode);
   }
 
@@ -663,16 +531,16 @@ export class FallbackEtaProvider implements EtaProvider {
       return { success: false, error: 'mode_guard', message: 'Route ETA is only computed in Destination mode.' };
     }
 
-    // Attempt 1: Ola Maps (if key present and circuit unbroken)
+    // Attempt 1: Ola Directions (Free tier up to 100K calls/month)
     if (getOlaMapsApiKey() && !isOlaCircuitBroken) {
       const olaRes = await this.ola.fetchRoute(origin, destination, mode);
       if (olaRes.success) {
         return olaRes;
       }
-      // If Ola fails, fall through to OSRM
+      // If Ola Directions fails, fall through to OSRM
     }
 
-    // Attempt 2: OSRM
+    // Attempt 2: OSRM (Free fallback)
     return this.osrm.fetchRoute(origin, destination, mode);
   }
 }
@@ -735,8 +603,8 @@ export function isManualMinutesImplausible(minutes: number): boolean {
 
 /**
  * Formats the source label for the UI tiles:
- * ola -> "Route estimate"
- * osrm -> "Car routing estimate"
+ * ola -> "Route estimate" (from Ola Directions)
+ * osrm -> "Car routing estimate" (from OSRM)
  * manual -> "Your estimate"
  */
 export function getEstimateSourceLabel(source: EstimateSource | null | undefined): string {

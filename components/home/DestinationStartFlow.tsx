@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState } from 'react';
 import {
   View,
   Text,
@@ -7,10 +7,10 @@ import {
   TouchableOpacity,
   ActivityIndicator,
   Alert,
-  Platform,
 } from 'react-native';
-import { Search, MapPin, Check, AlertTriangle, X } from 'lucide-react-native';
+import { Search, MapPin, Check, AlertTriangle, X, Navigation } from 'lucide-react-native';
 import { SegmentedPills } from '../ui/SegmentedPills';
+import { RideMap } from '../RideMap';
 import { RideMode } from '../../types/ride';
 import {
   GeocodeResult,
@@ -18,8 +18,6 @@ import {
   clampManualMinutes,
   formatManualMinutesInWords,
   isManualMinutesImplausible,
-  getOlaMapsApiKey,
-  isOlaCircuitBreakerTripped,
 } from '../../services/etaService';
 import { getSetting, setSetting } from '../../database/settingsRepository';
 import { Colors } from '../../constants/theme';
@@ -40,6 +38,8 @@ const MODE_OPTIONS = [
   { key: 'destination' as RideMode, label: 'Destination' },
 ];
 
+type InputMethod = 'search' | 'pin';
+
 export const DestinationStartFlow: React.FC<DestinationStartFlowProps> = ({
   mode,
   onModeChange,
@@ -48,76 +48,24 @@ export const DestinationStartFlow: React.FC<DestinationStartFlowProps> = ({
   manualMinutes,
   onChangeManualMinutes,
 }) => {
+  const [inputMethod, setInputMethod] = useState<InputMethod>('search');
   const [query, setQuery] = useState('');
   const [searching, setSearching] = useState(false);
   const [results, setResults] = useState<GeocodeResult[]>([]);
   const [searchError, setSearchError] = useState<string | null>(null);
 
-  const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const activeAbortRef = useRef<AbortController | null>(null);
-
-  const isOlaAvailable = Boolean(getOlaMapsApiKey()) && !isOlaCircuitBreakerTripped();
-
-  // Autocomplete debouncing: only when Ola Maps is active (500ms, min 3 chars, cancels in-flight)
-  useEffect(() => {
-    if (!isOlaAvailable || mode !== 'destination' || selectedDestination) {
-      return;
-    }
-
-    const trimmed = query.trim();
-    if (trimmed.length < 3) {
-      setResults([]);
-      setSearchError(null);
-      return;
-    }
-
-    if (debounceTimerRef.current) {
-      clearTimeout(debounceTimerRef.current);
-    }
-
-    debounceTimerRef.current = setTimeout(async () => {
-      // Cancel any previous in-flight request
-      if (activeAbortRef.current) {
-        activeAbortRef.current.abort();
-      }
-      activeAbortRef.current = new AbortController();
-
-      setSearching(true);
-      setSearchError(null);
-
-      try {
-        const response = await searchDestination(trimmed, 'destination');
-        setSearching(false);
-
-        if (response.success) {
-          setResults(response.results);
-          if (response.results.length === 0) {
-            setSearchError('Destination not found. Check spelling, try a nearby town, or enter minutes manually.');
-          }
-        } else {
-          setResults([]);
-          if (response.error !== 'mode_guard') {
-            setSearchError(response.message);
-          }
-        }
-      } catch {
-        setSearching(false);
-      }
-    }, 500);
-
-    return () => {
-      if (debounceTimerRef.current) {
-        clearTimeout(debounceTimerRef.current);
-      }
-    };
-  }, [query, isOlaAvailable, mode, selectedDestination]);
+  // Map pin drop state
+  const [pinnedCoords, setPinnedCoords] = useState<[number, number] | null>(null); // [lng, lat]
+  const [pinnedName, setPinnedName] = useState('');
 
   const handleSelectMode = async (nextMode: RideMode) => {
     if (nextMode === 'free') {
-      // Switching back to Free Ride clears everything typed with zero network calls
+      // Switching back to Free Ride clears everything with zero network calls
       setQuery('');
       setResults([]);
       setSearchError(null);
+      setPinnedCoords(null);
+      setPinnedName('');
       onSelectDestination(null);
       onChangeManualMinutes('');
       onModeChange('free');
@@ -130,7 +78,7 @@ export const DestinationStartFlow: React.FC<DestinationStartFlowProps> = ({
       if (!ack) {
         Alert.alert(
           'Destination Mode Privacy',
-          'Destination mode sends your search text (while typing, to Ola Maps when enabled), the chosen destination, and start/destination coordinates to Ola Maps, or to OpenStreetMap Nominatim and OSRM when fallback is used.\n\nFree Ride sends nothing over the network, and zero data is sent during or after your ride.',
+          'Destination mode queries OpenStreetMap Nominatim when searching, and requests an upfront route estimate via Ola Directions (or OSRM fallback).\n\nFree Ride sends zero network requests, and zero data is transmitted during or after your ride.',
           [
             {
               text: 'Decline',
@@ -157,18 +105,15 @@ export const DestinationStartFlow: React.FC<DestinationStartFlowProps> = ({
     onModeChange('destination');
   };
 
+  /**
+   * Free Path 1: OpenStreetMap Nominatim search on explicit submit only.
+   * Never fires per-keystroke.
+   */
   const handleSearchSubmit = async () => {
     const trimmed = query.trim();
     if (!trimmed) {
-      setSearchError('Please enter a place name to search.');
+      setSearchError('Please enter a destination name.');
       return;
-    }
-
-    if (debounceTimerRef.current) {
-      clearTimeout(debounceTimerRef.current);
-    }
-    if (activeAbortRef.current) {
-      activeAbortRef.current.abort();
     }
 
     setSearching(true);
@@ -181,7 +126,7 @@ export const DestinationStartFlow: React.FC<DestinationStartFlowProps> = ({
     if (response.success) {
       setResults(response.results);
       if (response.results.length === 0) {
-        setSearchError('Destination not found. Check spelling, try a nearby town, or enter minutes manually.');
+        setSearchError('Place not found in OpenStreetMap. Switch to "Drop Pin on Map" to drop a pin directly.');
       }
     } else {
       setResults([]);
@@ -189,10 +134,43 @@ export const DestinationStartFlow: React.FC<DestinationStartFlowProps> = ({
     }
   };
 
-  const handlePickResult = (dest: GeocodeResult) => {
+  const handlePickSearchResult = (dest: GeocodeResult) => {
     hapticFeedback.selection();
     onSelectDestination(dest);
-    setResults([]); // Collapse search list once picked
+    setResults([]);
+  };
+
+  /**
+   * Free Path 2: Map pin drop via MapLibre long-press.
+   * Works for any destination including unmapped new societies (e.g. Migsun Vilaasa).
+   */
+  const handleMapLongPress = (coordinate: [number, number]) => {
+    // coordinate is [longitude, latitude]
+    hapticFeedback.medium();
+    setPinnedCoords(coordinate);
+    if (!pinnedName.trim()) {
+      setPinnedName('Destination');
+    }
+  };
+
+  const handleConfirmPin = () => {
+    if (!pinnedCoords) {
+      Alert.alert('Pin Required', 'Long-press on the map to place your destination pin first.');
+      return;
+    }
+
+    const name = pinnedName.trim() || 'Custom Destination';
+    const [lng, lat] = pinnedCoords;
+
+    hapticFeedback.selection();
+    onSelectDestination({
+      place_id: `pin_${lat.toFixed(5)}_${lng.toFixed(5)}`,
+      name,
+      display_name: `${name} (${lat.toFixed(4)}°N, ${lng.toFixed(4)}°E)`,
+      lat,
+      lng,
+      source: 'pin',
+    });
   };
 
   const handleClearDestination = () => {
@@ -201,6 +179,8 @@ export const DestinationStartFlow: React.FC<DestinationStartFlowProps> = ({
     setQuery('');
     setResults([]);
     setSearchError(null);
+    setPinnedCoords(null);
+    setPinnedName('');
   };
 
   const parsedMinutes = parseInt(manualMinutes, 10);
@@ -222,7 +202,7 @@ export const DestinationStartFlow: React.FC<DestinationStartFlowProps> = ({
       {/* Destination Mode Flow */}
       {mode === 'destination' && (
         <View style={styles.destinationPanel}>
-          {/* Destination Search Box or Selected Card */}
+          {/* Selected Destination Card */}
           {selectedDestination ? (
             <View style={styles.selectedDestinationCard}>
               <View style={styles.pinCircle}>
@@ -248,94 +228,185 @@ export const DestinationStartFlow: React.FC<DestinationStartFlowProps> = ({
               </TouchableOpacity>
             </View>
           ) : (
-            <View style={styles.searchRow}>
-              <View style={styles.inputContainer}>
-                <MapPin size={16} color={UI.textMuted} style={styles.inputIcon} />
-                <TextInput
-                  value={query}
-                  onChangeText={(t) => {
-                    setQuery(t);
-                    if (searchError) setSearchError(null);
+            <>
+              {/* Method Toggle: Search Place vs Drop Pin on Map */}
+              <View style={styles.methodToggleRow}>
+                <TouchableOpacity
+                  style={[styles.methodTab, inputMethod === 'search' && styles.methodTabActive]}
+                  onPress={() => {
+                    hapticFeedback.light();
+                    setInputMethod('search');
                   }}
-                  onSubmitEditing={handleSearchSubmit}
-                  returnKeyType="search"
-                  placeholder={
-                    isOlaAvailable
-                      ? 'Where to? (e.g. Nandi Hills)'
-                      : 'Where to? Type and tap Search'
-                  }
-                  placeholderTextColor={UI.textMuted}
-                  style={styles.textInput}
-                  autoCorrect={false}
-                  maxFontSizeMultiplier={1.3}
-                />
-                {query.length > 0 && (
-                  <TouchableOpacity
-                    onPress={() => {
-                      setQuery('');
-                      setResults([]);
-                      setSearchError(null);
-                    }}
-                    style={styles.inputClearBtn}
-                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                  activeOpacity={0.8}
+                >
+                  <Search size={14} color={inputMethod === 'search' ? Colors.primary : UI.textMuted} />
+                  <Text
+                    style={[styles.methodTabText, inputMethod === 'search' && styles.methodTabTextActive]}
+                    maxFontSizeMultiplier={1.3}
                   >
-                    <X size={14} color={UI.textMuted} />
-                  </TouchableOpacity>
-                )}
+                    Search Name
+                  </Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[styles.methodTab, inputMethod === 'pin' && styles.methodTabActive]}
+                  onPress={() => {
+                    hapticFeedback.light();
+                    setInputMethod('pin');
+                  }}
+                  activeOpacity={0.8}
+                >
+                  <MapPin size={14} color={inputMethod === 'pin' ? Colors.primary : UI.textMuted} />
+                  <Text
+                    style={[styles.methodTabText, inputMethod === 'pin' && styles.methodTabTextActive]}
+                    maxFontSizeMultiplier={1.3}
+                  >
+                    Drop Pin on Map
+                  </Text>
+                </TouchableOpacity>
               </View>
 
-              <TouchableOpacity
-                onPress={handleSearchSubmit}
-                disabled={searching}
-                style={styles.searchSubmitBtn}
-                activeOpacity={0.8}
-                accessibilityRole="button"
-                accessibilityLabel="Search destination"
-              >
-                {searching ? (
-                  <ActivityIndicator size="small" color="#080A09" />
-                ) : (
-                  <Search size={18} color="#080A09" />
-                )}
-              </TouchableOpacity>
-            </View>
-          )}
+              {/* Free Path 1: Nominatim Submit-Search */}
+              {inputMethod === 'search' && (
+                <View style={styles.searchSection}>
+                  <View style={styles.searchRow}>
+                    <View style={styles.inputContainer}>
+                      <MapPin size={16} color={UI.textMuted} style={styles.inputIcon} />
+                      <TextInput
+                        value={query}
+                        onChangeText={(t) => {
+                          setQuery(t);
+                          if (searchError) setSearchError(null);
+                        }}
+                        onSubmitEditing={handleSearchSubmit}
+                        returnKeyType="search"
+                        placeholder="Where to? Type and tap Search"
+                        placeholderTextColor={UI.textMuted}
+                        style={styles.textInput}
+                        autoCorrect={false}
+                        maxFontSizeMultiplier={1.3}
+                      />
+                      {query.length > 0 && (
+                        <TouchableOpacity
+                          onPress={() => {
+                            setQuery('');
+                            setResults([]);
+                            setSearchError(null);
+                          }}
+                          style={styles.inputClearBtn}
+                          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                        >
+                          <X size={14} color={UI.textMuted} />
+                        </TouchableOpacity>
+                      )}
+                    </View>
 
-          {/* Search Error Notice */}
-          {searchError && !selectedDestination && (
-            <View style={styles.errorNotice}>
-              <AlertTriangle size={14} color={Colors.warning} style={{ marginRight: 6 }} />
-              <Text style={styles.errorNoticeText} maxFontSizeMultiplier={1.3}>
-                {searchError}
-              </Text>
-            </View>
-          )}
-
-          {/* Search Results Dropdown */}
-          {!selectedDestination && results.length > 0 && (
-            <View style={styles.resultsList}>
-              {results.map((item) => (
-                <TouchableOpacity
-                  key={String(item.place_id)}
-                  style={styles.resultItem}
-                  onPress={() => handlePickResult(item)}
-                  activeOpacity={0.7}
-                  accessibilityRole="button"
-                  accessibilityLabel={`Select destination ${item.name}, ${item.district || ''} ${item.state || ''}`}
-                >
-                  <MapPin size={16} color={Colors.primary} style={{ marginRight: 10, marginTop: 2 }} />
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.resultName} numberOfLines={1} maxFontSizeMultiplier={1.3}>
-                      {item.name}
-                    </Text>
-                    <Text style={styles.resultSub} numberOfLines={1} maxFontSizeMultiplier={1.3}>
-                      {[item.district, item.state].filter(Boolean).join(', ') || item.display_name}
-                    </Text>
+                    <TouchableOpacity
+                      onPress={handleSearchSubmit}
+                      disabled={searching}
+                      style={styles.searchSubmitBtn}
+                      activeOpacity={0.8}
+                      accessibilityRole="button"
+                      accessibilityLabel="Search destination"
+                    >
+                      {searching ? (
+                        <ActivityIndicator size="small" color="#080A09" />
+                      ) : (
+                        <Search size={18} color="#080A09" />
+                      )}
+                    </TouchableOpacity>
                   </View>
-                  <Check size={16} color="rgba(255, 255, 255, 0.2)" />
-                </TouchableOpacity>
-              ))}
-            </View>
+
+                  {/* Search Error Notice */}
+                  {searchError && (
+                    <View style={styles.errorNotice}>
+                      <AlertTriangle size={14} color={Colors.warning} style={{ marginRight: 6 }} />
+                      <Text style={styles.errorNoticeText} maxFontSizeMultiplier={1.3}>
+                        {searchError}
+                      </Text>
+                    </View>
+                  )}
+
+                  {/* Search Results Dropdown */}
+                  {results.length > 0 && (
+                    <View style={styles.resultsList}>
+                      {results.map((item) => (
+                        <TouchableOpacity
+                          key={String(item.place_id)}
+                          style={styles.resultItem}
+                          onPress={() => handlePickSearchResult(item)}
+                          activeOpacity={0.7}
+                        >
+                          <MapPin size={16} color={Colors.primary} style={{ marginRight: 10, marginTop: 2 }} />
+                          <View style={{ flex: 1 }}>
+                            <Text style={styles.resultName} numberOfLines={1} maxFontSizeMultiplier={1.3}>
+                              {item.name}
+                            </Text>
+                            <Text style={styles.resultSub} numberOfLines={1} maxFontSizeMultiplier={1.3}>
+                              {[item.district, item.state].filter(Boolean).join(', ') || item.display_name}
+                            </Text>
+                          </View>
+                          <Check size={16} color="rgba(255, 255, 255, 0.2)" />
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+                  )}
+                </View>
+              )}
+
+              {/* Free Path 2: Map Pin Drop (MapLibre with Long-Press) */}
+              {inputMethod === 'pin' && (
+                <View style={styles.pinSection}>
+                  <View style={styles.mapContainer}>
+                    <RideMap
+                      height={200}
+                      interactive={true}
+                      showStartEndMarkers={false}
+                      onLongPress={handleMapLongPress}
+                      pinnedCoordinate={pinnedCoords}
+                    />
+                    <View style={styles.mapHintBadge}>
+                      <Text style={styles.mapHintText} maxFontSizeMultiplier={1.3}>
+                        {pinnedCoords
+                          ? 'Pin placed. Long-press elsewhere to move.'
+                          : '👆 Long-press anywhere on the map to drop a pin'}
+                      </Text>
+                    </View>
+                  </View>
+
+                  {/* Pin Details & Confirmation */}
+                  {pinnedCoords && (
+                    <View style={styles.pinConfirmationBox}>
+                      <Text style={styles.pinCoordLabel} maxFontSizeMultiplier={1.3}>
+                        Coordinates: {pinnedCoords[1].toFixed(5)}°N, {pinnedCoords[0].toFixed(5)}°E
+                      </Text>
+
+                      <View style={styles.pinNameInputWrapper}>
+                        <TextInput
+                          value={pinnedName}
+                          onChangeText={setPinnedName}
+                          placeholder="Destination Name (e.g. Migsun Vilaasa)"
+                          placeholderTextColor={UI.textMuted}
+                          style={styles.pinNameInput}
+                          maxFontSizeMultiplier={1.3}
+                        />
+                      </View>
+
+                      <TouchableOpacity
+                        onPress={handleConfirmPin}
+                        style={styles.confirmPinBtn}
+                        activeOpacity={0.8}
+                      >
+                        <Navigation size={16} color="#080A09" style={{ marginRight: 6 }} />
+                        <Text style={styles.confirmPinBtnText} maxFontSizeMultiplier={1.3}>
+                          Set as Destination
+                        </Text>
+                      </TouchableOpacity>
+                    </View>
+                  )}
+                </View>
+              )}
+            </>
           )}
 
           {/* Optional Manual Minutes Input */}
@@ -398,6 +469,39 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(255, 255, 255, 0.08)',
     padding: 12,
   },
+  methodToggleRow: {
+    flexDirection: 'row',
+    backgroundColor: 'rgba(255, 255, 255, 0.04)',
+    borderRadius: 8,
+    padding: 3,
+    marginBottom: 12,
+    gap: 4,
+  },
+  methodTab: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 7,
+    borderRadius: 6,
+    gap: 6,
+  },
+  methodTabActive: {
+    backgroundColor: 'rgba(52, 211, 153, 0.15)',
+    borderWidth: 1,
+    borderColor: 'rgba(52, 211, 153, 0.3)',
+  },
+  methodTabText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: UI.textMuted,
+  },
+  methodTabTextActive: {
+    color: Colors.primary,
+  },
+  searchSection: {
+    width: '100%',
+  },
   searchRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -459,11 +563,11 @@ const styles = StyleSheet.create({
   destName: {
     color: '#FFFFFF',
     fontSize: 14,
-    fontWeight: '600',
+    fontWeight: '700',
   },
   destSub: {
     color: UI.textSecondary,
-    fontSize: 12,
+    fontSize: 11,
     marginTop: 2,
   },
   clearBtn: {
@@ -472,16 +576,14 @@ const styles = StyleSheet.create({
   errorNotice: {
     flexDirection: 'row',
     alignItems: 'center',
+    backgroundColor: 'rgba(239, 68, 68, 0.1)',
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
     marginTop: 8,
-    paddingHorizontal: 8,
-    paddingVertical: 6,
-    backgroundColor: 'rgba(240, 200, 121, 0.08)',
-    borderRadius: 6,
-    borderWidth: 1,
-    borderColor: 'rgba(240, 200, 121, 0.2)',
   },
   errorNoticeText: {
-    color: '#F0C879',
+    color: Colors.warning,
     fontSize: 12,
     flex: 1,
     lineHeight: 16,
@@ -496,11 +598,11 @@ const styles = StyleSheet.create({
   },
   resultItem: {
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     paddingHorizontal: 12,
     paddingVertical: 10,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: 'rgba(255, 255, 255, 0.06)',
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(255, 255, 255, 0.05)',
   },
   resultName: {
     color: '#FFFFFF',
@@ -512,44 +614,111 @@ const styles = StyleSheet.create({
     fontSize: 11,
     marginTop: 2,
   },
-  manualMinutesRow: {
-    marginTop: 10,
+  pinSection: {
+    width: '100%',
   },
-  manualInputBlock: {
+  mapContainer: {
+    borderRadius: 10,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.1)',
+    position: 'relative',
+  },
+  mapHintBadge: {
+    position: 'absolute',
+    top: 8,
+    left: 8,
+    right: 8,
+    backgroundColor: 'rgba(8, 10, 10, 0.85)',
+    borderRadius: 6,
+    paddingVertical: 4,
+    paddingHorizontal: 8,
+    alignItems: 'center',
+  },
+  mapHintText: {
+    color: Colors.primary,
+    fontSize: 11,
+    fontWeight: '600',
+  },
+  pinConfirmationBox: {
+    marginTop: 10,
     backgroundColor: 'rgba(255, 255, 255, 0.03)',
-    borderRadius: 8,
+    borderRadius: 10,
     padding: 10,
     borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.08)',
+  },
+  pinCoordLabel: {
+    color: UI.textMuted,
+    fontSize: 11,
+    marginBottom: 6,
+  },
+  pinNameInputWrapper: {
+    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.08)',
+    paddingHorizontal: 10,
+    height: 38,
+    justifyContent: 'center',
+    marginBottom: 8,
+  },
+  pinNameInput: {
+    color: '#FFFFFF',
+    fontSize: 13,
+    paddingVertical: 0,
+  },
+  confirmPinBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: Colors.primary,
+    borderRadius: 8,
+    paddingVertical: 8,
+  },
+  confirmPinBtnText: {
+    color: '#080A09',
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  manualMinutesRow: {
+    marginTop: 12,
+  },
+  manualInputBlock: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: 'rgba(255, 255, 255, 0.04)',
+    borderRadius: 10,
+    borderWidth: 1,
     borderColor: 'rgba(255, 255, 255, 0.06)',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
   },
   manualLabel: {
     color: UI.textSecondary,
     fontSize: 12,
-    marginBottom: 6,
+    flex: 1,
   },
   manualInput: {
-    backgroundColor: 'rgba(255, 255, 255, 0.05)',
-    borderRadius: 6,
     color: '#FFFFFF',
     fontSize: 14,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.08)',
+    fontWeight: '700',
+    textAlign: 'right',
+    minWidth: 60,
+    paddingVertical: 4,
   },
   wordsEchoBox: {
     marginTop: 8,
     paddingHorizontal: 10,
     paddingVertical: 6,
     backgroundColor: 'rgba(52, 211, 153, 0.08)',
-    borderRadius: 6,
-    borderWidth: 1,
-    borderColor: 'rgba(52, 211, 153, 0.2)',
+    borderRadius: 8,
   },
   wordsEchoText: {
-    color: '#34D399',
+    color: Colors.primary,
     fontSize: 12,
-    fontWeight: '500',
+    fontWeight: '600',
   },
   implausibleWarning: {
     flexDirection: 'row',
@@ -557,7 +726,7 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   implausibleWarningText: {
-    color: '#F0C879',
+    color: Colors.warning,
     fontSize: 11,
     flex: 1,
   },

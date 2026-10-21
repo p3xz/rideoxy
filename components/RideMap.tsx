@@ -25,6 +25,8 @@ interface RideMapProps {
   zoomLevel?: number;
   showStartEndMarkers?: boolean;
   height?: number | string;
+  onLongPress?: (coordinate: [number, number]) => void;
+  pinnedCoordinate?: [number, number] | null;
 }
 
 export const RideMap: React.FC<RideMapProps> = ({
@@ -36,6 +38,8 @@ export const RideMap: React.FC<RideMapProps> = ({
   zoomLevel = 15,
   showStartEndMarkers = true,
   height = '100%',
+  onLongPress,
+  pinnedCoordinate,
 }) => {
   const cameraRef = useRef<CameraRef>(null);
   const [mapReady, setMapReady] = useState(false);
@@ -56,7 +60,9 @@ export const RideMap: React.FC<RideMapProps> = ({
     ],
   };
 
-  const centerCoordinate: [number, number] = currentLocation
+  const centerCoordinate: [number, number] = pinnedCoordinate
+    ? pinnedCoordinate
+    : currentLocation
     ? [currentLocation.longitude, currentLocation.latitude]
     : coordinates.length > 0
     ? coordinates[coordinates.length - 1]
@@ -112,6 +118,12 @@ export const RideMap: React.FC<RideMapProps> = ({
         touchZoom={interactive}
         touchRotate={interactive}
         touchPitch={false}
+        onLongPress={(event) => {
+          const lngLat = event.nativeEvent?.lngLat ?? (event as any).lngLat;
+          if (lngLat && Array.isArray(lngLat) && typeof lngLat[0] === 'number') {
+            onLongPress?.([lngLat[0], lngLat[1]]);
+          }
+        }}
         onDidFinishLoadingMap={() => setMapReady(true)}
         onDidFailLoadingMap={() => {
           setMapError('Offline · Map tiles unavailable');
@@ -169,6 +181,15 @@ export const RideMap: React.FC<RideMapProps> = ({
           <Marker id="endPoint" lngLat={endCoordinate}>
             <View>
               <EndMarker size={24} />
+            </View>
+          </Marker>
+        )}
+
+        {/* Pinned Destination Marker */}
+        {pinnedCoordinate && (
+          <Marker id="pinnedPoint" lngLat={pinnedCoordinate}>
+            <View>
+              <EndMarker size={28} />
             </View>
           </Marker>
         )}

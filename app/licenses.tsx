@@ -29,7 +29,7 @@ const LICENSES = [
     name: 'Ola Maps',
     license: 'Proprietary Terms / Krutrim',
     url: 'https://maps.olakrutrim.com',
-    description: 'Places autocomplete, geocoding, and routing services for Destination ride mode. © Krutrim / Ola Maps.',
+    description: 'Routing and directions service (Free tier) for Destination ride mode. © Krutrim / Ola Maps.',
   },
   {
     name: 'Expo & React Native',

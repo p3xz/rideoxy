@@ -75,7 +75,7 @@ Rideoxy is a high-performance mobile application engineered for motorcyclists. T
 
 ### Ola Maps API Key (Optional)
 
-Rideoxy uses [Ola Maps](https://maps.olacabs.com/) for fast autocomplete search and high-accuracy motorcycle routing when planning a Destination ride. If no API key is provided, the app automatically falls back to OpenStreetMap (Nominatim & OSRM) or manual rider estimates.
+Rideoxy uses [Ola Maps Directions](https://maps.olacabs.com/) (free tier up to 100K requests/month) for high-accuracy motorcycle routing when planning a Destination ride. No paid Ola products (Places autocomplete, geocoding, roads) are ever called. Destination search uses OpenStreetMap Nominatim or interactive map pin drop. If no Ola API key is provided, the app automatically falls back to OpenStreetMap OSRM or manual rider estimates.
 
 1. **Local Development**:
    - Copy `.env.example` to `.env` in the project root:

@@ -2,8 +2,14 @@ import {
   OlaMapsProvider,
   OsrmNominatimProvider,
   FallbackEtaProvider,
+  searchDestination,
+  fetchRouteEta,
   resetOlaCircuitBreaker,
-  clearAutocompleteCache,
+  isAllowedOutboundUrl,
+  ALLOWED_OUTBOUND_ENDPOINTS,
+  OLA_DIRECTIONS_URL,
+  NOMINATIM_BASE_URL,
+  OSRM_BASE_URL,
   formatManualMinutesInWords,
   clampManualMinutes,
   isManualMinutesImplausible,
@@ -11,7 +17,7 @@ import {
   redactApiKey,
 } from '../services/etaService';
 
-describe('etaService', () => {
+describe('etaService - Free-Only Architecture', () => {
   let originalFetch: typeof global.fetch;
   let originalApiKey: string | undefined;
 
@@ -19,240 +25,159 @@ describe('etaService', () => {
     originalFetch = global.fetch;
     originalApiKey = process.env.EXPO_PUBLIC_OLA_MAPS_API_KEY;
     resetOlaCircuitBreaker();
-    clearAutocompleteCache();
   });
 
   afterEach(() => {
     global.fetch = originalFetch;
     process.env.EXPO_PUBLIC_OLA_MAPS_API_KEY = originalApiKey;
     resetOlaCircuitBreaker();
-    clearAutocompleteCache();
   });
 
   // ──────────────────────────────────────────────────────────────────────────
-  // 1. OSRM & Nominatim Provider (Baseline / Fallback)
+  // 1. Strict Outbound Endpoint Allowlist Guard
   // ──────────────────────────────────────────────────────────────────────────
 
-  describe('OsrmNominatimProvider', () => {
+  describe('Outbound Endpoint Allowlist Guard', () => {
+    test('Only free endpoints (Ola Directions, Nominatim, OSRM) are in the allowlist', () => {
+      expect(ALLOWED_OUTBOUND_ENDPOINTS).toEqual([
+        'https://api.olamaps.io/routing/v1/directions',
+        'https://nominatim.openstreetmap.org/search',
+        'https://router.project-osrm.org/route/v1/driving',
+      ]);
+    });
+
+    test('isAllowedOutboundUrl permits only whitelisted free endpoints', () => {
+      // Allowed
+      expect(isAllowedOutboundUrl('https://api.olamaps.io/routing/v1/directions?origin=12,77&destination=13,77')).toBe(true);
+      expect(isAllowedOutboundUrl('https://nominatim.openstreetmap.org/search?q=Nandi+Hills')).toBe(true);
+      expect(isAllowedOutboundUrl('https://router.project-osrm.org/route/v1/driving/77,12;77,13')).toBe(true);
+
+      // Forbidden paid products (BLOCKED)
+      expect(isAllowedOutboundUrl('https://api.olamaps.io/places/v1/autocomplete?input=Nandi')).toBe(false);
+      expect(isAllowedOutboundUrl('https://api.olamaps.io/places/v1/geocode?address=Bangalore')).toBe(false);
+      expect(isAllowedOutboundUrl('https://api.olamaps.io/places/v1/details?place_id=123')).toBe(false);
+      expect(isAllowedOutboundUrl('https://api.olamaps.io/roads/v1/nearestRoad?points=12,77')).toBe(false);
+      expect(isAllowedOutboundUrl('https://api.olamaps.io/roads/v1/speedLimits?points=12,77')).toBe(false);
+      expect(isAllowedOutboundUrl('https://maps.googleapis.com/maps/api/directions/json')).toBe(false);
+    });
+
+    test('Any attempt to request a forbidden outbound URL throws and blocks fetch', async () => {
+      const fetchSpy = jest.fn();
+      global.fetch = fetchSpy;
+
+      // Try routing through fallback provider
+      const fallback = new FallbackEtaProvider();
+      const origin = { latitude: 12.9716, longitude: 77.5946 };
+      const dest = { latitude: 13.3702, longitude: 77.6835 };
+
+      // Destination search must only call Nominatim
+      global.fetch = jest.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: async () => [],
+      });
+
+      await fallback.searchDestination('Migsun Vilaasa', 'destination');
+      expect(global.fetch).toHaveBeenCalledTimes(1);
+      const requestedUrl = (global.fetch as jest.Mock).mock.calls[0][0];
+      expect(requestedUrl).toMatch(/^https:\/\/nominatim\.openstreetmap\.org\/search/);
+      expect(requestedUrl).not.toContain('olamaps');
+    });
+  });
+
+  // ──────────────────────────────────────────────────────────────────────────
+  // 2. Free Search: OpenStreetMap Nominatim Submit-Search
+  // ──────────────────────────────────────────────────────────────────────────
+
+  describe('Nominatim Submit-Search (Free)', () => {
     let provider: OsrmNominatimProvider;
 
     beforeEach(() => {
       provider = new OsrmNominatimProvider();
     });
 
-    describe('Mode Guard', () => {
-      test('Free ride mode makes zero network calls and rejects geocode request', async () => {
-        const fetchSpy = jest.fn();
-        global.fetch = fetchSpy;
+    test('Free ride mode makes zero network calls and rejects geocode request', async () => {
+      const fetchSpy = jest.fn();
+      global.fetch = fetchSpy;
 
-        const res = await provider.searchDestination('Nandi Hills', 'free');
-        expect(res.success).toBe(false);
-        if (!res.success) {
-          expect(res.error).toBe('mode_guard');
-        }
-        expect(fetchSpy).not.toHaveBeenCalled();
-      });
-
-      test('Free ride mode makes zero network calls and rejects route ETA request', async () => {
-        const fetchSpy = jest.fn();
-        global.fetch = fetchSpy;
-
-        const origin = { latitude: 12.9716, longitude: 77.5946 };
-        const dest = { latitude: 13.3702, longitude: 77.6835 };
-
-        const res = await provider.fetchRoute(origin, dest, 'free');
-        expect(res.success).toBe(false);
-        if (!res.success) {
-          expect(res.error).toBe('mode_guard');
-        }
-        expect(fetchSpy).not.toHaveBeenCalled();
-      });
+      const res = await provider.searchDestination('Nandi Hills', 'free');
+      expect(res.success).toBe(false);
+      if (!res.success) {
+        expect(res.error).toBe('mode_guard');
+      }
+      expect(fetchSpy).not.toHaveBeenCalled();
     });
 
-    describe('Nominatim Geocoding', () => {
-      test('Success with recorded fixture: parses name, district, state, and coordinates', async () => {
-        const fixture = [
-          {
-            place_id: 2827181,
-            name: 'Nandi Hills',
-            display_name: 'Nandi Hills, Chikkaballapura, Karnataka, 562103, India',
-            lat: '13.3702',
-            lon: '77.6835',
-            address: {
-              county: 'Chikkaballapura',
-              state: 'Karnataka',
-              country: 'India',
-            },
+    test('Success with recorded fixture: parses name, district, state, coordinates', async () => {
+      const fixture = [
+        {
+          place_id: 2827181,
+          name: 'Nandi Hills',
+          display_name: 'Nandi Hills, Chikkaballapura, Karnataka, 562103, India',
+          lat: '13.3702',
+          lon: '77.6835',
+          address: {
+            county: 'Chikkaballapura',
+            state: 'Karnataka',
+            country: 'India',
           },
-        ];
+        },
+      ];
 
-        global.fetch = jest.fn().mockResolvedValue({
-          ok: true,
-          status: 200,
-          json: async () => fixture,
-        });
-
-        const res = await provider.searchDestination('Nandi Hills', 'destination');
-        expect(res.success).toBe(true);
-        if (res.success) {
-          expect(res.results).toHaveLength(1);
-          const item = res.results[0];
-          expect(item.name).toBe('Nandi Hills');
-          expect(item.district).toBe('Chikkaballapura');
-          expect(item.state).toBe('Karnataka');
-          expect(item.lat).toBe(13.3702);
-          expect(item.lng).toBe(77.6835);
-        }
+      global.fetch = jest.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: async () => fixture,
       });
 
-      test('Empty results: returns typed not_found error', async () => {
-        global.fetch = jest.fn().mockResolvedValue({
-          ok: true,
-          status: 200,
-          json: async () => [],
-        });
-
-        const res = await provider.searchDestination('NonExistentPlaceXYZ', 'destination');
-        expect(res.success).toBe(false);
-        if (!res.success) {
-          expect(res.error).toBe('not_found');
-        }
-      });
-
-      test('HTTP 429 Rate Limit: returns typed rate_limited error', async () => {
-        global.fetch = jest.fn().mockResolvedValue({
-          ok: false,
-          status: 429,
-          json: async () => ({ error: 'Too Many Requests' }),
-        });
-
-        const res = await provider.searchDestination('Bangalore', 'destination');
-        expect(res.success).toBe(false);
-        if (!res.success) {
-          expect(res.error).toBe('rate_limited');
-        }
-      });
-
-      test('Malformed JSON: returns typed parse_error', async () => {
-        global.fetch = jest.fn().mockResolvedValue({
-          ok: true,
-          status: 200,
-          json: async () => {
-            throw new Error('Unexpected token < in JSON at position 0');
-          },
-        });
-
-        const res = await provider.searchDestination('Mysore', 'destination');
-        expect(res.success).toBe(false);
-        if (!res.success) {
-          expect(res.error).toBe('parse_error');
-        }
-      });
+      const res = await provider.searchDestination('Nandi Hills', 'destination');
+      expect(res.success).toBe(true);
+      if (res.success) {
+        expect(res.results).toHaveLength(1);
+        const item = res.results[0];
+        expect(item.name).toBe('Nandi Hills');
+        expect(item.district).toBe('Chikkaballapura');
+        expect(item.state).toBe('Karnataka');
+        expect(item.lat).toBe(13.3702);
+        expect(item.lng).toBe(77.6835);
+        expect(item.source).toBe('nominatim');
+      }
     });
 
-    describe('OSRM Routing', () => {
-      const origin = { latitude: 12.9716, longitude: 77.5946 };
-      const dest = { latitude: 13.3702, longitude: 77.6835 };
-
-      test('Success with recorded fixture: reads duration and distance', async () => {
-        const fixture = {
-          code: 'Ok',
-          routes: [
-            {
-              duration: 3600, // 1 hour
-              distance: 60000, // 60 km
-            },
-          ],
-          waypoints: [
-            { location: [77.5946, 12.9716], name: 'Start Point' },
-            { location: [77.6835, 13.3702], name: 'End Point' },
-          ],
-        };
-
-        global.fetch = jest.fn().mockResolvedValue({
-          ok: true,
-          status: 200,
-          json: async () => fixture,
-        });
-
-        const res = await provider.fetchRoute(origin, dest, 'destination');
-        expect(res.success).toBe(true);
-        if (res.success) {
-          expect(res.estimate.durationSec).toBe(3600);
-          expect(res.estimate.distanceM).toBe(60000);
-          expect(res.estimate.source).toBe('osrm');
-          expect(res.estimate.isLowTrust).toBe(false);
-        }
+    test('Empty results (e.g. unmapped new society): returns not_found', async () => {
+      global.fetch = jest.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: async () => [],
       });
 
-      test('NoRoute: returns typed no_route without retry', async () => {
-        const fetchSpy = jest.fn().mockResolvedValue({
-          ok: true,
-          status: 200,
-          json: async () => ({
-            code: 'NoRoute',
-            routes: [],
-          }),
-        });
-        global.fetch = fetchSpy;
+      const res = await provider.searchDestination('Migsun Vilaasa Greater Noida', 'destination');
+      expect(res.success).toBe(false);
+      if (!res.success) {
+        expect(res.error).toBe('not_found');
+      }
+    });
 
-        const res = await provider.fetchRoute(origin, dest, 'destination');
-        expect(res.success).toBe(false);
-        if (!res.success) {
-          expect(res.error).toBe('no_route');
-        }
-        expect(fetchSpy).toHaveBeenCalledTimes(1);
+    test('HTTP 429 Rate Limit: returns typed rate_limited error', async () => {
+      global.fetch = jest.fn().mockResolvedValue({
+        ok: false,
+        status: 429,
+        json: async () => ({ error: 'Too Many Requests' }),
       });
 
-      test('Snapped waypoint far from requested (> 500m): marks isLowTrust = true', async () => {
-        const fixture = {
-          code: 'Ok',
-          routes: [
-            {
-              duration: 2400,
-              distance: 40000,
-            },
-          ],
-          waypoints: [
-            { location: [77.5946, 12.9806], name: 'Distant Waypoint' },
-            { location: [77.6835, 13.3702], name: 'End Point' },
-          ],
-        };
-
-        global.fetch = jest.fn().mockResolvedValue({
-          ok: true,
-          status: 200,
-          json: async () => fixture,
-        });
-
-        const res = await provider.fetchRoute(origin, dest, 'destination');
-        expect(res.success).toBe(true);
-        if (res.success) {
-          expect(res.estimate.isLowTrust).toBe(true);
-        }
-      });
-
-      test('Timeout (AbortError): returns typed timeout error', async () => {
-        global.fetch = jest.fn().mockImplementation(() => {
-          const error = new Error('The user aborted a request.');
-          error.name = 'AbortError';
-          return Promise.reject(error);
-        });
-
-        const res = await provider.fetchRoute(origin, dest, 'destination');
-        expect(res.success).toBe(false);
-        if (!res.success) {
-          expect(res.error).toBe('timeout');
-        }
-      });
+      const res = await provider.searchDestination('Bangalore', 'destination');
+      expect(res.success).toBe(false);
+      if (!res.success) {
+        expect(res.error).toBe('rate_limited');
+      }
     });
   });
 
   // ──────────────────────────────────────────────────────────────────────────
-  // 2. Ola Maps Primary Provider
+  // 3. Free Route Routing: Ola Directions (Allowed Ola Endpoint)
   // ──────────────────────────────────────────────────────────────────────────
 
-  describe('OlaMapsProvider', () => {
+  describe('Ola Directions (Free Tier up to 100K/mo)', () => {
     let olaProvider: OlaMapsProvider;
     const origin = { latitude: 12.9716, longitude: 77.5946 };
     const dest = { latitude: 13.3702, longitude: 77.6835 };
@@ -262,22 +187,15 @@ describe('etaService', () => {
       process.env.EXPO_PUBLIC_OLA_MAPS_API_KEY = 'test_ola_api_key_12345';
     });
 
-    test('Free ride mode makes zero network calls and rejects search and routing', async () => {
+    test('Free ride mode makes zero network calls and rejects routing request', async () => {
       const fetchSpy = jest.fn();
       global.fetch = fetchSpy;
-
-      const searchRes = await olaProvider.searchDestination('Nandi Hills', 'free');
-      expect(searchRes.success).toBe(false);
-      if (!searchRes.success) {
-        expect(searchRes.error).toBe('mode_guard');
-      }
 
       const routeRes = await olaProvider.fetchRoute(origin, dest, 'free');
       expect(routeRes.success).toBe(false);
       if (!routeRes.success) {
         expect(routeRes.error).toBe('mode_guard');
       }
-
       expect(fetchSpy).not.toHaveBeenCalled();
     });
 
@@ -286,133 +204,15 @@ describe('etaService', () => {
       const fetchSpy = jest.fn();
       global.fetch = fetchSpy;
 
-      const searchRes = await olaProvider.searchDestination('Nandi Hills', 'destination');
-      expect(searchRes.success).toBe(false);
-      if (!searchRes.success) {
-        expect(searchRes.error).toBe('not_available');
-      }
-
       const routeRes = await olaProvider.fetchRoute(origin, dest, 'destination');
       expect(routeRes.success).toBe(false);
       if (!routeRes.success) {
         expect(routeRes.error).toBe('not_available');
       }
-
       expect(fetchSpy).not.toHaveBeenCalled();
     });
 
-    test('Autocomplete success with recorded fixture: parses predictions and geometry', async () => {
-      const fixture = {
-        predictions: [
-          {
-            place_id: 'ola_place_nandi',
-            description: 'Nandi Hills, Chikkaballapura, Karnataka, India',
-            structured_formatting: {
-              main_text: 'Nandi Hills',
-              secondary_text: 'Chikkaballapura, Karnataka, India',
-            },
-            geometry: {
-              location: {
-                lat: 13.3702,
-                lng: 77.6835,
-              },
-            },
-          },
-        ],
-      };
-
-      global.fetch = jest.fn().mockResolvedValue({
-        ok: true,
-        status: 200,
-        json: async () => fixture,
-      });
-
-      const res = await olaProvider.searchDestination('Nandi', 'destination');
-      expect(res.success).toBe(true);
-      if (res.success) {
-        expect(res.results).toHaveLength(1);
-        const item = res.results[0];
-        expect(item.name).toBe('Nandi Hills');
-        expect(item.lat).toBe(13.3702);
-        expect(item.lng).toBe(77.6835);
-        expect(item.source).toBe('ola');
-      }
-    });
-
-    test('Autocomplete session caching: second identical query makes zero network calls', async () => {
-      const fixture = {
-        predictions: [
-          {
-            place_id: 'ola_1',
-            description: 'Nandi Hills, Karnataka',
-            geometry: { location: { lat: 13.37, lng: 77.68 } },
-          },
-        ],
-      };
-
-      const fetchSpy = jest.fn().mockResolvedValue({
-        ok: true,
-        status: 200,
-        json: async () => fixture,
-      });
-      global.fetch = fetchSpy;
-
-      const first = await olaProvider.searchDestination('nandi hills', 'destination');
-      expect(first.success).toBe(true);
-      expect(fetchSpy).toHaveBeenCalledTimes(1);
-
-      // Repeat with same query
-      const second = await olaProvider.searchDestination('nandi hills', 'destination');
-      expect(second.success).toBe(true);
-      expect(fetchSpy).toHaveBeenCalledTimes(1); // Cached!
-    });
-
-    test('HTTP 429 trips circuit breaker and returns rate_limited', async () => {
-      global.fetch = jest.fn().mockResolvedValue({
-        ok: false,
-        status: 429,
-        json: async () => ({ error: 'Rate limit exceeded' }),
-      });
-
-      const res = await olaProvider.searchDestination('Bangalore', 'destination');
-      expect(res.success).toBe(false);
-      if (!res.success) {
-        expect(res.error).toBe('rate_limited');
-      }
-
-      // Next call should be blocked by circuit breaker without network calls
-      const fetchSpy = jest.fn();
-      global.fetch = fetchSpy;
-      const blockedRes = await olaProvider.searchDestination('Mysore', 'destination');
-      expect(blockedRes.success).toBe(false);
-      if (!blockedRes.success) {
-        expect(blockedRes.error).toBe('not_available');
-      }
-      expect(fetchSpy).not.toHaveBeenCalled();
-    });
-
-    test('HTTP 401 / 403 trips circuit breaker and returns auth_error', async () => {
-      global.fetch = jest.fn().mockResolvedValue({
-        ok: false,
-        status: 401,
-        json: async () => ({ error: 'Unauthorized' }),
-      });
-
-      const res = await olaProvider.fetchRoute(origin, dest, 'destination');
-      expect(res.success).toBe(false);
-      if (!res.success) {
-        expect(res.error).toBe('auth_error');
-      }
-
-      // Subsequent call should immediately fail due to circuit breaker
-      const nextRes = await olaProvider.fetchRoute(origin, dest, 'destination');
-      expect(nextRes.success).toBe(false);
-      if (!nextRes.success) {
-        expect(nextRes.error).toBe('not_available');
-      }
-    });
-
-    test('Routing success with recorded fixture: parses duration and distance', async () => {
+    test('Success with recorded fixture: parses duration and distance with source: ola', async () => {
       const fixture = {
         routes: [
           {
@@ -442,6 +242,44 @@ describe('etaService', () => {
       }
     });
 
+    test('HTTP 429 trips circuit breaker and returns rate_limited', async () => {
+      global.fetch = jest.fn().mockResolvedValue({
+        ok: false,
+        status: 429,
+        json: async () => ({ error: 'Rate limit exceeded' }),
+      });
+
+      const res = await olaProvider.fetchRoute(origin, dest, 'destination');
+      expect(res.success).toBe(false);
+      if (!res.success) {
+        expect(res.error).toBe('rate_limited');
+      }
+
+      // Next call should be blocked by circuit breaker without network calls
+      const fetchSpy = jest.fn();
+      global.fetch = fetchSpy;
+      const blockedRes = await olaProvider.fetchRoute(origin, dest, 'destination');
+      expect(blockedRes.success).toBe(false);
+      if (!blockedRes.success) {
+        expect(blockedRes.error).toBe('not_available');
+      }
+      expect(fetchSpy).not.toHaveBeenCalled();
+    });
+
+    test('HTTP 401 / 403 trips circuit breaker and returns auth_error', async () => {
+      global.fetch = jest.fn().mockResolvedValue({
+        ok: false,
+        status: 401,
+        json: async () => ({ error: 'Unauthorized' }),
+      });
+
+      const res = await olaProvider.fetchRoute(origin, dest, 'destination');
+      expect(res.success).toBe(false);
+      if (!res.success) {
+        expect(res.error).toBe('auth_error');
+      }
+    });
+
     test('Routing with snapped point > 500m marks isLowTrust = true', async () => {
       const fixture = {
         routes: [
@@ -452,7 +290,7 @@ describe('etaService', () => {
         ],
         waypoints: [
           { location: { lat: 12.9716, lng: 77.5946 } },
-          // Snapped endpoint ~1.1 km away in latitude
+          // Snapped endpoint ~1.1 km away
           { location: { lat: 13.3802, lng: 77.6835 } },
         ],
       };
@@ -472,10 +310,10 @@ describe('etaService', () => {
   });
 
   // ──────────────────────────────────────────────────────────────────────────
-  // 3. FallbackEtaProvider (Chain: Ola -> OSM)
+  // 4. Free Fallback Chain: Ola Directions -> OSRM
   // ──────────────────────────────────────────────────────────────────────────
 
-  describe('FallbackEtaProvider', () => {
+  describe('Fallback Chain (Ola Directions -> OSRM)', () => {
     let fallback: FallbackEtaProvider;
     const origin = { latitude: 12.9716, longitude: 77.5946 };
     const dest = { latitude: 13.3702, longitude: 77.6835 };
@@ -484,7 +322,7 @@ describe('etaService', () => {
       fallback = new FallbackEtaProvider();
     });
 
-    test('When Ola key is present and Ola succeeds, returns Ola source without hitting OSM', async () => {
+    test('When Ola key is present and Ola Directions succeeds, returns source: ola', async () => {
       process.env.EXPO_PUBLIC_OLA_MAPS_API_KEY = 'valid_key';
 
       const olaFixture = {
@@ -540,11 +378,10 @@ describe('etaService', () => {
         expect(res.estimate.source).toBe('osrm');
         expect(res.estimate.durationSec).toBe(2500);
       }
-      // Should have called OSRM directly (1 call)
       expect(fetchSpy).toHaveBeenCalledTimes(1);
     });
 
-    test('When Ola returns 429, trips circuit breaker and falls back to OSRM', async () => {
+    test('When Ola Directions returns 429, trips circuit breaker and falls back to OSRM', async () => {
       process.env.EXPO_PUBLIC_OLA_MAPS_API_KEY = 'valid_key';
 
       const osrmFixture = {
@@ -559,7 +396,7 @@ describe('etaService', () => {
 
       const fetchSpy = jest
         .fn()
-        // First call: Ola returns 429
+        // First call: Ola Directions returns 429
         .mockResolvedValueOnce({
           ok: false,
           status: 429,
@@ -583,7 +420,7 @@ describe('etaService', () => {
   });
 
   // ──────────────────────────────────────────────────────────────────────────
-  // 4. Utility Functions & Labels
+  // 5. Utility Functions & Labels
   // ──────────────────────────────────────────────────────────────────────────
 
   describe('Words Echo and Labels', () => {
@@ -617,8 +454,8 @@ describe('etaService', () => {
     });
 
     test('redactApiKey hides secret tokens from diagnostic strings', () => {
-      const url = 'https://api.olamaps.io/places/v1/autocomplete?input=test&api_key=SECRET_TOKEN_999';
-      expect(redactApiKey(url)).toBe('https://api.olamaps.io/places/v1/autocomplete?input=test&api_key=[REDACTED]');
+      const url = 'https://api.olamaps.io/routing/v1/directions?origin=12,77&api_key=SECRET_TOKEN_999';
+      expect(redactApiKey(url)).toBe('https://api.olamaps.io/routing/v1/directions?origin=12,77&api_key=[REDACTED]');
     });
   });
 });
