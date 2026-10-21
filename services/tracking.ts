@@ -4,7 +4,7 @@ import { Coordinates } from './distance';
 import { LiveTrackingState } from '../types/tracking';
 import { GPS_CONFIG, GPS_FILTER_CONFIG } from '../constants/gps';
 import { validateGPSPoint } from './gpsFilter';
-import { recordGpsDiagnostic } from './gpsDiagnostics';
+import { recordGpsDebugFix } from './gpsDebugLog';
 import {
   createRide,
   updateRide,
@@ -578,7 +578,11 @@ class TrackingService {
     const rideId = this.state.currentRide.id;
     let newCoordsAdded = false;
 
-    for (const point of points) {
+    const sortedPoints = [...points].sort((a, b) => a.timestamp - b.timestamp);
+    if (sortedPoints.length === 0) return;
+
+    for (let i = 0; i < sortedPoints.length; i++) {
+      const point = sortedPoints[i];
       const now = Date.now();
 
       // If GPS is resuming after a stale period (>= 2s without fixes),
@@ -614,10 +618,8 @@ class TrackingService {
       });
 
       if (!validation.isValid) {
-        recordGpsDiagnostic({
+        recordGpsDebugFix({
           timestamp: point.timestamp,
-          latitude: point.latitude,
-          longitude: point.longitude,
           accuracy: point.accuracy,
           reportedSpeed: point.speed !== null && point.speed !== undefined && point.speed >= 0 ? point.speed : null,
           derivedSpeed: validation.derivedSpeedMs ?? null,
@@ -645,6 +647,42 @@ class TrackingService {
       this.lastPointReceivedTime = now;
       this.state.gpsSignalState = 'good';
 
+      // Demoted fix (accuracy worse than platform threshold, e.g. iOS 20m, Android 25m)
+      // Contributes NO distance, NO track point, NO top speed, and never moves the stationary anchor
+      if (validation.isDemoted) {
+        const rideStart = this.state.currentRide?.start_time ?? now;
+        const hasWaited10sAtStart = !this.lastRecordedPoint && (now - rideStart >= 10000);
+
+        // One exception: a demoted fix may serve as a ride's first origin if no better fix arrives within about 10 seconds of ride start
+        if (hasWaited10sAtStart) {
+          this.lastRecordedPoint = point;
+          this.stationaryAnchor = point;
+          this.state.currentLocation = {
+            latitude: point.latitude,
+            longitude: point.longitude,
+            heading: point.heading,
+            accuracy: point.accuracy,
+            altitude: point.altitude,
+          };
+          this.state.currentSpeedKmh = 0;
+          this.state.lastUpdated = now;
+        }
+
+        recordGpsDebugFix({
+          timestamp: point.timestamp,
+          accuracy: point.accuracy,
+          reportedSpeed: point.speed !== null && point.speed !== undefined && point.speed >= 0 ? point.speed : null,
+          derivedSpeed: validation.derivedSpeedMs ?? null,
+          distanceFromLastAccepted: validation.distanceFromLastAccepted ?? 0,
+          decision: 'demoted',
+          reason: validation.reason ?? 'Accuracy poor (> platform threshold)',
+          isStill: this.isStill,
+          mocked: point.mocked,
+        });
+
+        continue;
+      }
+
       const segmentDistanceKm = (validation.segmentDistanceMeters ?? 0) / 1000;
       const segmentDurationSec = validation.segmentTimeSeconds ?? 0;
       const calculatedSpeedKmh = validation.segmentSpeedKmh ?? 0;
@@ -666,10 +704,8 @@ class TrackingService {
         this.state.currentSpeedKmh = 0;
         this.state.lastUpdated = now;
 
-        recordGpsDiagnostic({
+        recordGpsDebugFix({
           timestamp: point.timestamp,
-          latitude: point.latitude,
-          longitude: point.longitude,
           accuracy: point.accuracy,
           reportedSpeed: point.speed !== null && point.speed !== undefined && point.speed >= 0 ? point.speed : null,
           derivedSpeed: validation.derivedSpeedMs ?? null,
@@ -745,10 +781,8 @@ class TrackingService {
         this.state.currentAvgSpeedKmh = Math.min(calculatedAvg, this.state.currentMaxSpeedKmh);
       }
 
-      recordGpsDiagnostic({
+      recordGpsDebugFix({
         timestamp: point.timestamp,
-        latitude: point.latitude,
-        longitude: point.longitude,
         accuracy: point.accuracy,
         reportedSpeed: point.speed !== null && point.speed !== undefined && point.speed >= 0 ? point.speed : null,
         derivedSpeed: validation.derivedSpeedMs ?? null,

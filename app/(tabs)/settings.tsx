@@ -11,10 +11,10 @@ import { hapticFeedback } from '../../services/haptics';
 import {
   isGpsLoggingEnabled,
   setGpsLoggingEnabled,
-  getFormattedGpsLogs,
-  getGpsLogCount,
-  clearGpsDiagnosticLogs,
-} from '../../services/gpsDiagnostics';
+  getFormattedGpsDebugLogs as getFormattedGpsLogs,
+  getGpsDebugLogCount as getGpsLogCount,
+  clearGpsDebugLogs as clearGpsDiagnosticLogs,
+} from '../../services/gpsDebugLog';
 import {
   User,
   SlidersHorizontal,
