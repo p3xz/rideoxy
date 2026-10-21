@@ -45,4 +45,5 @@ export interface RawGPSPoint {
   accuracy: number | null;
   heading: number | null;
   timestamp: number;
+  mocked?: boolean;
 }

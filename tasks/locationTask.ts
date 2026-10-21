@@ -28,6 +28,7 @@ TaskManager.defineTask(BACKGROUND_LOCATION_TASK, async ({ data, error }) => {
         accuracy: loc.coords.accuracy,
         heading: loc.coords.heading,
         timestamp: loc.timestamp,
+        mocked: (loc as any).mocked ?? (loc.coords as any)?.mocked ?? false,
       }));
 
       if (globalLocationCallback) {

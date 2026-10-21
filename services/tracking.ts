@@ -2,8 +2,9 @@ import { Ride, TrackPoint, RawGPSPoint, RideMode } from '../types/ride';
 import { fetchRouteEta } from './etaService';
 import { Coordinates } from './distance';
 import { LiveTrackingState } from '../types/tracking';
-import { GPS_CONFIG } from '../constants/gps';
+import { GPS_CONFIG, GPS_FILTER_CONFIG } from '../constants/gps';
 import { validateGPSPoint } from './gpsFilter';
+import { recordGpsDiagnostic } from './gpsDiagnostics';
 import {
   createRide,
   updateRide,
@@ -45,6 +46,9 @@ class TrackingService {
   private stationaryAnchor: RawGPSPoint | null = null;
   private lastPointReceivedTime: number = 0;
   private isGpsStale: boolean = false;
+  private isStill: boolean = true;
+  private consecutiveMovingFixes: number = 0;
+  private speedSmoothingQueue: number[] = [];
   private timerInterval: ReturnType<typeof setInterval> | null = null;
   private tickCounter: number = 0;
   private lastDbSyncTime: number = 0;
@@ -160,7 +164,9 @@ class TrackingService {
       if (!perms.canTrack) {
         return {
           success: false,
-          error: 'Location permission is required to record a ride.',
+          error: perms.isReducedAccuracy
+            ? 'Precise location is required. Please enable Precise Location in Settings.'
+            : 'Location permission is required to record a ride.',
           errorType: 'permission',
         };
       }
@@ -213,6 +219,9 @@ class TrackingService {
 
       this.lastRecordedPoint = initialFix;
       this.stationaryAnchor = initialFix;
+      this.isStill = true;
+      this.consecutiveMovingFixes = 0;
+      this.speedSmoothingQueue = [];
       this.lastPointReceivedTime = initialFix ? Date.now() : 0;
       this.isGpsStale = false;
       const initialRouteCoords: [number, number][] = initialFix
@@ -289,6 +298,9 @@ class TrackingService {
     this.state.currentSpeedKmh = 0;
     this.lastPointReceivedTime = 0;
     this.isGpsStale = true;
+    this.isStill = true;
+    this.consecutiveMovingFixes = 0;
+    this.speedSmoothingQueue = [];
 
     // Stop native location tracking while paused to save battery and prevent unwanted background churn
     await stopLocationTracking();
@@ -315,6 +327,9 @@ class TrackingService {
     this.state.currentSpeedKmh = 0;
     this.lastPointReceivedTime = 0;
     this.isGpsStale = true;
+    this.isStill = true;
+    this.consecutiveMovingFixes = 0;
+    this.speedSmoothingQueue = [];
 
     await updateRide(this.state.currentRide.id, {
       status: 'running',
@@ -430,6 +445,9 @@ class TrackingService {
     };
     this.lastRecordedPoint = null;
     this.stationaryAnchor = null;
+    this.isStill = true;
+    this.consecutiveMovingFixes = 0;
+    this.speedSmoothingQueue = [];
     this.lastPointReceivedTime = 0;
     this.isGpsStale = false;
     this.notifyListeners(true);
@@ -476,9 +494,26 @@ class TrackingService {
         continue;
       }
 
-      const validation = validateGPSPoint(point, this.lastRecordedPoint, this.stationaryAnchor);
+      const validation = validateGPSPoint(point, this.lastRecordedPoint, this.stationaryAnchor, {
+        isCurrentlyStill: this.isStill,
+        consecutiveMovingFixes: this.consecutiveMovingFixes,
+      });
 
       if (!validation.isValid) {
+        recordGpsDiagnostic({
+          timestamp: point.timestamp,
+          latitude: point.latitude,
+          longitude: point.longitude,
+          accuracy: point.accuracy,
+          reportedSpeed: point.speed !== null && point.speed !== undefined && point.speed >= 0 ? point.speed : null,
+          derivedSpeed: validation.derivedSpeedMs ?? null,
+          distanceFromLastAccepted: validation.distanceFromLastAccepted ?? 0,
+          decision: 'rejected',
+          reason: validation.reason,
+          isStill: this.isStill,
+          mocked: point.mocked,
+        });
+
         console.log('[GPS REJECTED]', {
           reason: validation.reason,
           timestamp: point.timestamp,
@@ -504,6 +539,10 @@ class TrackingService {
         : 0;
 
       if (validation.isStationaryJitter) {
+        this.isStill = true;
+        this.consecutiveMovingFixes = validation.consecutiveMovingFixes ?? 0;
+        this.speedSmoothingQueue = [];
+
         // Vehicle is stationary: anchor position to prevent wandering baseline
         if (!this.stationaryAnchor && this.lastRecordedPoint) {
           this.stationaryAnchor = this.lastRecordedPoint;
@@ -512,6 +551,20 @@ class TrackingService {
         // Speed is strictly 0 km/h
         this.state.currentSpeedKmh = 0;
         this.state.lastUpdated = now;
+
+        recordGpsDiagnostic({
+          timestamp: point.timestamp,
+          latitude: point.latitude,
+          longitude: point.longitude,
+          accuracy: point.accuracy,
+          reportedSpeed: point.speed !== null && point.speed !== undefined && point.speed >= 0 ? point.speed : null,
+          derivedSpeed: validation.derivedSpeedMs ?? null,
+          distanceFromLastAccepted: validation.distanceFromLastAccepted ?? 0,
+          decision: 'still',
+          reason: 'Stationary (< 8m/accuracy radius or speed < 1m/s)',
+          isStill: true,
+          mocked: point.mocked,
+        });
 
         // CRITICAL INVARIANT:
         // Do NOT update this.state.currentLocation (prevents map camera easing/swimming)
@@ -536,10 +589,20 @@ class TrackingService {
       }
 
       // Valid genuine movement segment: release stationary anchor
+      this.isStill = false;
+      this.consecutiveMovingFixes = validation.consecutiveMovingFixes ?? 0;
       this.stationaryAnchor = null;
 
       // Single authoritative speed, distance, and duration source
-      this.state.currentSpeedKmh = calculatedSpeedKmh;
+      // Smooth displayed speed with 3-fix moving average
+      this.speedSmoothingQueue.push(calculatedSpeedKmh);
+      if (this.speedSmoothingQueue.length > GPS_FILTER_CONFIG.SPEED_SMOOTHING_SAMPLES) {
+        this.speedSmoothingQueue.shift();
+      }
+      const smoothedSpeedKmh =
+        this.speedSmoothingQueue.reduce((sum, s) => sum + s, 0) / this.speedSmoothingQueue.length;
+
+      this.state.currentSpeedKmh = Math.round(smoothedSpeedKmh * 10) / 10;
       this.state.lastUpdated = now;
 
       // Authoritative location ONLY updates on accepted movement
@@ -551,7 +614,7 @@ class TrackingService {
         altitude: point.altitude,
       };
 
-      // Update max speed from the SAME calculated segment speed
+      // Update max speed only from accepted, non-spike, moving fixes
       if (calculatedSpeedKmh > this.state.currentMaxSpeedKmh && calculatedSpeedKmh <= GPS_CONFIG.MAX_PLAUSIBLE_SPEED_KMH) {
         this.state.currentMaxSpeedKmh = Math.round(calculatedSpeedKmh * 10) / 10;
       }
@@ -567,6 +630,19 @@ class TrackingService {
         // Invariant: Average speed can never exceed max speed
         this.state.currentAvgSpeedKmh = Math.min(calculatedAvg, this.state.currentMaxSpeedKmh);
       }
+
+      recordGpsDiagnostic({
+        timestamp: point.timestamp,
+        latitude: point.latitude,
+        longitude: point.longitude,
+        accuracy: point.accuracy,
+        reportedSpeed: point.speed !== null && point.speed !== undefined && point.speed >= 0 ? point.speed : null,
+        derivedSpeed: validation.derivedSpeedMs ?? null,
+        distanceFromLastAccepted: validation.distanceFromLastAccepted ?? 0,
+        decision: 'accepted',
+        isStill: false,
+        mocked: point.mocked,
+      });
 
       console.log('[GPS SEGMENT - MOVEMENT ACCEPTED]', {
         distance: `${segmentDistanceKm.toFixed(4)} km`,

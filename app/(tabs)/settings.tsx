@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { StyleSheet, View, Text, ScrollView, Alert, Linking } from 'react-native';
+import { StyleSheet, View, Text, ScrollView, Alert, Linking, Switch } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
@@ -8,6 +8,13 @@ import * as Clipboard from 'expo-clipboard';
 import { Platform } from 'react-native';
 import { getDatabaseSize } from '../../database/database';
 import { hapticFeedback } from '../../services/haptics';
+import {
+  isGpsLoggingEnabled,
+  setGpsLoggingEnabled,
+  getFormattedGpsLogs,
+  getGpsLogCount,
+  clearGpsDiagnosticLogs,
+} from '../../services/gpsDiagnostics';
 import {
   User,
   SlidersHorizontal,
@@ -25,6 +32,7 @@ import {
   Clock,
   FileCode,
   Copy,
+  Activity,
 } from 'lucide-react-native';
 import { Colors } from '../../constants/theme';
 import { UI } from '../../constants/ui';
@@ -40,7 +48,7 @@ import { InfoSheet, SheetAction, SheetLabel } from '../../components/ui/InfoShee
 import { PreferencesPanel } from '../../components/settings/PreferencesPanel';
 import { FadeInUpView } from '../../lib/motion';
 
-type SheetKey = 'profile' | 'prefs' | 'location' | 'data' | 'help' | 'about' | 'backup' | null;
+type SheetKey = 'profile' | 'prefs' | 'location' | 'data' | 'help' | 'about' | 'backup' | 'diagnostics' | null;
 
 const APP_VERSION: string = Constants.expoConfig?.version ?? '1.0.0';
 const BUILD_NUMBER: string = Constants.expoConfig?.ios?.buildNumber ?? '1';
@@ -73,9 +81,41 @@ export default function SettingsScreen() {
   const insets = useSafeAreaInsets();
   const tabBarHeight = useTabBarHeight();
   const [sheet, setSheet] = useState<SheetKey>(null);
+  const [gpsLogging, setGpsLogging] = useState<boolean>(isGpsLoggingEnabled());
+  const [logCount, setLogCount] = useState<number>(getGpsLogCount());
 
   const iconProps = { size: 20, color: UI.textPrimary, strokeWidth: 1.6 } as const;
   const close = () => setSheet(null);
+
+  const toggleGpsLogging = (enabled: boolean) => {
+    hapticFeedback.light();
+    setGpsLogging(enabled);
+    setGpsLoggingEnabled(enabled);
+    setLogCount(getGpsLogCount());
+  };
+
+  const copyGpsLogs = async () => {
+    try {
+      hapticFeedback.light();
+      const text = getFormattedGpsLogs();
+      const count = getGpsLogCount();
+      await Clipboard.setStringAsync(text);
+      hapticFeedback.success();
+      Alert.alert(
+        'GPS Debug Log Copied',
+        `Copied ${count} diagnostic ${count === 1 ? 'entry' : 'entries'} to clipboard.\n\nClipboard contains in-memory telemetry decisions only.`
+      );
+    } catch {
+      Alert.alert('Error', 'Could not copy GPS debug log.');
+    }
+  };
+
+  const clearGpsLogs = () => {
+    hapticFeedback.light();
+    clearGpsDiagnosticLogs();
+    setLogCount(0);
+    Alert.alert('Log Cleared', 'In-memory GPS debug buffer has been cleared.');
+  };
 
   const copyDiagnostics = async () => {
     try {
@@ -215,9 +255,12 @@ export default function SettingsScreen() {
             <ListRow
               variant="plain"
               leading={<IconBubble><FileCode {...iconProps} /></IconBubble>}
-              title="System Diagnostics"
-              subtitle="Copy OS version, build, & DB size to clipboard"
-              onPress={copyDiagnostics}
+              title="Diagnostics"
+              subtitle="GPS debug log & system diagnostics"
+              onPress={() => {
+                setLogCount(getGpsLogCount());
+                setSheet('diagnostics');
+              }}
             />
           </Card>
         </FadeInUpView>
@@ -370,6 +413,68 @@ export default function SettingsScreen() {
         <SheetLabel>GEOSPATIAL & VECTOR TILES</SheetLabel>
         <Text style={styles.paragraph}>{MAP_ATTRIBUTION.attributionNotice}</Text>
       </InfoSheet>
+
+      {/* Diagnostics: System & GPS Debug Log */}
+      <InfoSheet
+        visible={sheet === 'diagnostics'}
+        title="Diagnostics"
+        subtitle="GPS telemetry debug log & system diagnostics"
+        onClose={close}
+      >
+        <SheetLabel>GPS DEBUG LOG</SheetLabel>
+        <View style={styles.toggleRow}>
+          <View style={styles.toggleTextWrap}>
+            <Text style={styles.toggleTitle}>GPS debug log</Text>
+            <Text style={styles.toggleSubtitle}>
+              In-memory ring buffer (last ~300 fixes) recording accuracy, reported speed, distance, and filter decisions.
+            </Text>
+          </View>
+          <Switch
+            value={gpsLogging}
+            onValueChange={toggleGpsLogging}
+            trackColor={{ false: 'rgba(255,255,255,0.12)', true: Colors.primary }}
+            thumbColor={gpsLogging ? '#FFFFFF' : '#9CA3AF'}
+            ios_backgroundColor="rgba(255,255,255,0.12)"
+          />
+        </View>
+
+        <Text style={styles.logStatusText}>
+          Buffer: {logCount} / 300 fixes in memory ({gpsLogging ? 'Active' : 'Off'})
+        </Text>
+
+        <SheetAction
+          icon={<Copy size={16} color={UI.textPrimary} />}
+          label="Copy log"
+          description={
+            logCount > 0
+              ? `Copy ${logCount} buffered GPS fixes to clipboard`
+              : 'Copy formatted in-memory GPS telemetry log'
+          }
+          onPress={copyGpsLogs}
+        />
+
+        {logCount > 0 ? (
+          <SheetAction
+            icon={<Trash2 size={16} color={Colors.danger} />}
+            label="Clear debug buffer"
+            description="Clear in-memory telemetry points"
+            destructive
+            onPress={clearGpsLogs}
+          />
+        ) : null}
+
+        <Text style={styles.paragraph}>
+          Nothing is stored in the database or sent anywhere. When OFF, zero buffer overhead.
+        </Text>
+
+        <SheetLabel>SYSTEM TELEMETRY</SheetLabel>
+        <SheetAction
+          icon={<Copy size={16} color={UI.textPrimary} />}
+          label="Copy System Diagnostics"
+          description={`Rideoxy v${APP_VERSION} (${BUILD_NUMBER}) · ${Platform.OS} ${String(Platform.Version)}`}
+          onPress={copyDiagnostics}
+        />
+      </InfoSheet>
     </View>
   );
 }
@@ -381,6 +486,35 @@ const styles = StyleSheet.create({
   },
   scroll: {
     flex: 1,
+  },
+  toggleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 12,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: UI.hairline,
+  },
+  toggleTextWrap: {
+    flex: 1,
+    paddingRight: 12,
+  },
+  toggleTitle: {
+    color: UI.textPrimary,
+    fontSize: 14,
+    fontWeight: '600',
+    marginBottom: 4,
+  },
+  toggleSubtitle: {
+    color: UI.textSecondary,
+    fontSize: 12,
+    lineHeight: 16,
+  },
+  logStatusText: {
+    color: UI.accent,
+    fontSize: 12,
+    fontWeight: '500',
+    paddingVertical: 8,
   },
   aboutCard: {
     marginTop: 18,

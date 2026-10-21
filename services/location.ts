@@ -8,17 +8,7 @@ export interface LocationPermissionStatus {
   foregroundGranted: boolean;
   backgroundGranted: boolean;
   canTrack: boolean;
-}
-
-export async function checkLocationPermissions(): Promise<LocationPermissionStatus> {
-  const foreground = await Location.getForegroundPermissionsAsync();
-  const background = await Location.getBackgroundPermissionsAsync();
-
-  return {
-    foregroundGranted: foreground.granted,
-    backgroundGranted: background.granted,
-    canTrack: foreground.granted,
-  };
+  isReducedAccuracy?: boolean;
 }
 
 export type GpsModalMode = 'explainer' | 'denied' | 'reduced_accuracy';
@@ -34,16 +24,48 @@ export function registerGpsExplainerHandler(handler: ((req: GpsExplainerRequest)
   explainerHandler = handler;
 }
 
+export function isReducedAccuracyResponse(response: any): boolean {
+  if (!response) return false;
+  return (
+    response.accuracy === 'reduced' ||
+    response.accuracy === 'coarse' ||
+    response.ios?.accuracy === 'reduced' ||
+    response.ios?.accuracy === 'coarse' ||
+    response.android?.accuracy === 'coarse'
+  );
+}
+
+export async function checkLocationPermissions(): Promise<LocationPermissionStatus> {
+  const foreground = await Location.getForegroundPermissionsAsync();
+  const background = await Location.getBackgroundPermissionsAsync();
+  const isReducedAccuracy = isReducedAccuracyResponse(foreground);
+
+  return {
+    foregroundGranted: foreground.granted,
+    backgroundGranted: background.granted,
+    canTrack: foreground.granted && !isReducedAccuracy,
+    isReducedAccuracy,
+  };
+}
+
 export async function requestLocationPermissions(): Promise<LocationPermissionStatus> {
   const currentFg = await Location.getForegroundPermissionsAsync();
   const handler = explainerHandler;
 
   // If already granted, check if iOS Approximate (reduced accuracy) is active
   if (currentFg.granted) {
-    if (handler && (currentFg as any).accuracy === 'reduced') {
-      await new Promise<boolean>((resolve) => {
-        handler({ mode: 'reduced_accuracy', resolve });
-      });
+    if (isReducedAccuracyResponse(currentFg)) {
+      if (handler) {
+        await new Promise<boolean>((resolve) => {
+          handler({ mode: 'reduced_accuracy', resolve });
+        });
+      }
+      return {
+        foregroundGranted: true,
+        backgroundGranted: false,
+        canTrack: false,
+        isReducedAccuracy: true,
+      };
     }
 
     let backgroundGranted = false;
@@ -62,6 +84,7 @@ export async function requestLocationPermissions(): Promise<LocationPermissionSt
       foregroundGranted: true,
       backgroundGranted,
       canTrack: true,
+      isReducedAccuracy: false,
     };
   }
 
@@ -76,6 +99,7 @@ export async function requestLocationPermissions(): Promise<LocationPermissionSt
       foregroundGranted: false,
       backgroundGranted: false,
       canTrack: false,
+      isReducedAccuracy: false,
     };
   }
 
@@ -89,6 +113,7 @@ export async function requestLocationPermissions(): Promise<LocationPermissionSt
         foregroundGranted: false,
         backgroundGranted: false,
         canTrack: false,
+        isReducedAccuracy: false,
       };
     }
   }
@@ -100,6 +125,22 @@ export async function requestLocationPermissions(): Promise<LocationPermissionSt
       foregroundGranted: false,
       backgroundGranted: false,
       canTrack: false,
+      isReducedAccuracy: false,
+    };
+  }
+
+  // Check if user selected "Approximate" in system dialog
+  if (isReducedAccuracyResponse(foreground)) {
+    if (handler) {
+      await new Promise<boolean>((resolve) => {
+        handler({ mode: 'reduced_accuracy', resolve });
+      });
+    }
+    return {
+      foregroundGranted: true,
+      backgroundGranted: false,
+      canTrack: false,
+      isReducedAccuracy: true,
     };
   }
 
@@ -116,13 +157,14 @@ export async function requestLocationPermissions(): Promise<LocationPermissionSt
     foregroundGranted: true,
     backgroundGranted,
     canTrack: true,
+    isReducedAccuracy: false,
   };
 }
 
 export async function getCurrentGPSFix(): Promise<RawGPSPoint | null> {
   try {
     const location = await Location.getCurrentPositionAsync({
-      accuracy: Location.Accuracy.High,
+      accuracy: Location.Accuracy.BestForNavigation,
     });
 
     return {
@@ -133,6 +175,7 @@ export async function getCurrentGPSFix(): Promise<RawGPSPoint | null> {
       accuracy: location.coords.accuracy,
       heading: location.coords.heading,
       timestamp: location.timestamp,
+      mocked: (location as any).mocked ?? (location.coords as any)?.mocked ?? false,
     };
   } catch (err) {
     console.warn('[Rideoxy] Failed to get initial GPS fix:', err);
@@ -151,9 +194,8 @@ export function getActiveTrackingMode(): 'none' | 'background' | 'foreground' {
 /**
  * Starts a single authoritative location subscription.
  * Prioritizes background tracking (with foreground service on Android / CoreLocation background on iOS).
- * If background tracking is unavailable or denied, cleanly falls back to foreground watching.
- * Guarantees that foreground and background watchers NEVER run concurrently.
- * Idempotent: Calling start twice will not create duplicate watchers.
+ * Uses accuracy: BestForNavigation, activityType: AutomotiveNavigation, pausesUpdatesAutomatically: false,
+ * showsBackgroundLocationIndicator: true, distanceInterval: ~5m, timeInterval: 1000ms.
  */
 export async function startLocationTracking(
   onLocation: (point: RawGPSPoint) => void
@@ -163,8 +205,11 @@ export async function startLocationTracking(
     return { success: true, mode: activeTrackingMode };
   }
 
-  // Check current background permission
+  // Check current permissions including reduced accuracy check
   const permissions = await checkLocationPermissions();
+  if (permissions.isReducedAccuracy) {
+    return { success: false, mode: 'none' as any };
+  }
 
   let backgroundStarted = false;
   if (permissions.backgroundGranted) {
@@ -173,6 +218,9 @@ export async function startLocationTracking(
       if (!isRegistered) {
         await Location.startLocationUpdatesAsync(BACKGROUND_LOCATION_TASK, {
           accuracy: Location.Accuracy.BestForNavigation,
+          activityType: Location.ActivityType.AutomotiveNavigation,
+          pausesUpdatesAutomatically: false,
+          showsBackgroundLocationIndicator: true,
           timeInterval: GPS_CONFIG.TRACKING_TIME_INTERVAL_MS,
           distanceInterval: GPS_CONFIG.TRACKING_DISTANCE_INTERVAL_METERS,
           foregroundService: {
@@ -180,8 +228,6 @@ export async function startLocationTracking(
             notificationBody: GPS_CONFIG.BACKGROUND_NOTIFICATION_BODY,
             notificationColor: Colors.primary,
           },
-          pausesUpdatesAutomatically: false,
-          showsBackgroundLocationIndicator: true,
         });
       }
 
@@ -194,7 +240,7 @@ export async function startLocationTracking(
 
       activeTrackingMode = 'background';
       backgroundStarted = true;
-      console.log('[Rideoxy] [LocationService] Single active location subscription started: BACKGROUND mode');
+      console.log('[Rideoxy] [LocationService] Authoritative location subscription started: BACKGROUND mode');
       return { success: true, mode: 'background' };
     } catch (bgErr) {
       console.warn('[Rideoxy] [LocationService] Background location start failed, falling back to foreground:', bgErr);
@@ -223,12 +269,13 @@ export async function startLocationTracking(
           accuracy: location.coords.accuracy,
           heading: location.coords.heading,
           timestamp: location.timestamp,
+          mocked: (location as any).mocked ?? (location.coords as any)?.mocked ?? false,
         });
       }
     );
 
     activeTrackingMode = 'foreground';
-    console.log('[Rideoxy] [LocationService] Single active location subscription started: FOREGROUND mode');
+    console.log('[Rideoxy] [LocationService] Authoritative location subscription started: FOREGROUND mode');
     return { success: true, mode: 'foreground' };
   } catch (fgErr) {
     console.error('[Rideoxy] [LocationService] Foreground location watcher failed to start:', fgErr);
@@ -239,7 +286,6 @@ export async function startLocationTracking(
 
 /**
  * Stops any and all active location subscriptions cleanly and idempotently.
- * Guarantees no lingering subscriptions or background tasks remain active.
  */
 export async function stopLocationTracking(): Promise<void> {
   // 1. Remove foreground watcher if active
@@ -265,7 +311,7 @@ export async function stopLocationTracking(): Promise<void> {
   console.log('[Rideoxy] [LocationService] All location subscriptions stopped cleanly');
 }
 
-// Backwards-compatible aliases for any existing callers
+// Backwards-compatible aliases
 export async function startBackgroundLocationTracking(): Promise<boolean> {
   const res = await startLocationTracking(() => {});
   return res.success && res.mode === 'background';

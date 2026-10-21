@@ -1,46 +1,66 @@
 /**
  * Centralized GPS parameters and thresholds for Rideoxy
- * Designed to preserve real motorcycle ride telemetry while filtering out spikes and stale fixes.
+ * Designed to preserve real motorcycle ride telemetry while filtering out spikes,
+ * stationary drift on real devices (iOS/Android), and stale fixes.
  */
+import { Platform } from 'react-native';
+
+export const GPS_FILTER_CONFIG = {
+  // Accuracy limits (meters)
+  // Stricter on iOS (20m) where CoreLocation provides clean fixes when precise, 25m on Android
+  MAX_ACCEPTABLE_ACCURACY_METERS: (Platform.select({ ios: 20, default: 25 }) ?? 25) as number,
+  MIN_ACCEPTABLE_ACCURACY_METERS: 0, // Accuracy must be strictly > 0
+
+  // Speed caps (m/s)
+  // Real device: 70 m/s (~252 km/h) — rejects extreme teleport spikes
+  MAX_SPEED_MS_DEVICE: (Platform.select({ ios: 70, default: 70 }) ?? 70) as number,
+  // Emulator/simulator or mocked coordinates: 120 m/s (~432 km/h) — allows 259 km/h emulator playback
+  MAX_SPEED_MS_EMULATOR: 120,
+
+  // Stationary detection
+  // Distance below max(accuracy, 8m) with reported speed < 1 m/s (or unknown) means phone is still
+  STATIONARY_RADIUS_METERS: (Platform.select({ ios: 8, default: 8 }) ?? 8) as number,
+  STATIONARY_ENTER_SPEED_MS: (Platform.select({ ios: 1.0, default: 1.0 }) ?? 1.0) as number,
+  // Hysteresis: leave still state if moved beyond radius, or speed > 2.0 m/s on 2 consecutive fixes
+  STATIONARY_EXIT_SPEED_MS: (Platform.select({ ios: 2.0, default: 2.0 }) ?? 2.0) as number,
+  STATIONARY_EXIT_CONSECUTIVE_FIXES: 2,
+
+  // Speed smoothing: moving average over the last 3 accepted moving fixes
+  SPEED_SMOOTHING_SAMPLES: 3,
+
+  // Stale age and burst rate limits
+  MAX_FIX_AGE_MS: 4000, // 4 seconds max fix age
+  MIN_SAMPLE_INTERVAL_MS: 200, // Reject sub-200ms bursts
+};
 
 export const GPS_CONFIG = {
   // Accuracy limits (meters)
-  // Base threshold for high accuracy
-  BASE_ACCURACY_THRESHOLD_METERS: 35,
-  // Hard upper limit beyond which coordinate is severely unreliable
-  MAX_ACCEPTABLE_ACCURACY_METERS: 75,
+  BASE_ACCURACY_THRESHOLD_METERS: 25,
+  MAX_ACCEPTABLE_ACCURACY_METERS: GPS_FILTER_CONFIG.MAX_ACCEPTABLE_ACCURACY_METERS,
 
   // Speed limits (km/h)
-  // Extreme speed check for motorcycle jump rejection
-  MAX_PLAUSIBLE_SPEED_KMH: 260,
-  // Minimum speed threshold to count as "moving" for moving_time calculations (approx 2.5 km/h = 0.7 m/s)
+  MAX_PLAUSIBLE_SPEED_KMH: GPS_FILTER_CONFIG.MAX_SPEED_MS_DEVICE * 3.6,
   MIN_MOVING_SPEED_KMH: 2.5,
-  MIN_MOVING_SPEED_MS: 0.7,
+  MIN_MOVING_SPEED_MS: GPS_FILTER_CONFIG.STATIONARY_ENTER_SPEED_MS,
 
   // Distance limits (meters)
-  // Distance below which movement is treated as stationary if point-to-point delta is negligible
-  MIN_STATIONARY_DISTANCE_METERS: 2.5,
-  // Maximum plausible distance jump in 1 second for motorcycle (260 km/h = ~72 m/s)
-  MAX_PLAUSIBLE_METERS_PER_SECOND: 75,
+  MIN_STATIONARY_DISTANCE_METERS: GPS_FILTER_CONFIG.STATIONARY_RADIUS_METERS,
+  MAX_PLAUSIBLE_METERS_PER_SECOND: GPS_FILTER_CONFIG.MAX_SPEED_MS_DEVICE,
 
   // Hardware polling frequencies
   TRACKING_TIME_INTERVAL_MS: 1000, // 1 second
-  TRACKING_DISTANCE_INTERVAL_METERS: 0, // 0 meters ensures continuous time-based updates even when stopping/slowing down
+  TRACKING_DISTANCE_INTERVAL_METERS: 5, // ~5 meters to prevent tiny jitter polling
 
   // Minimum interval between distinct GPS points to reject sub-second duplicate/burst callbacks (ms)
-  // Legitimate GNSS fixes arrive at <= 5 Hz (>= 200ms). Sub-200ms bursts from multiple listeners are rejected.
-  MIN_SAMPLE_INTERVAL_MS: 200,
+  MIN_SAMPLE_INTERVAL_MS: GPS_FILTER_CONFIG.MIN_SAMPLE_INTERVAL_MS,
 
   // UI Throttle: update map and HUD every 500ms minimum
   UI_THROTTLE_INTERVAL_MS: 500,
   MAP_THROTTLE_INTERVAL_MS: 1000,
 
   // Inactivity / Stale timeouts (ms)
-  // If no fresh GPS fix is received within 2.0s, current speed decays to 0 km/h immediately
   GPS_STALE_TIMEOUT_MS: 2000,
-  // Maximum acceptable age of an incoming GPS fix compared to wall-clock time
-  GPS_MAX_FIX_AGE_MS: 4000,
-  // Inactivity timeout before marking GPS signal as searching
+  GPS_MAX_FIX_AGE_MS: GPS_FILTER_CONFIG.MAX_FIX_AGE_MS,
   GPS_SIGNAL_TIMEOUT_MS: 4000,
 
   // Notification for Android background service
