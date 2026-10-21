@@ -1,4 +1,6 @@
-import { Ride, TrackPoint, RawGPSPoint } from '../types/ride';
+import { Ride, TrackPoint, RawGPSPoint, RideMode } from '../types/ride';
+import { fetchRouteEta } from './etaService';
+import { Coordinates } from './distance';
 import { LiveTrackingState } from '../types/tracking';
 import { GPS_CONFIG } from '../constants/gps';
 import { validateGPSPoint } from './gpsFilter';
@@ -13,14 +15,11 @@ import {
   getTrackPointsByRideId,
 } from '../database/trackPointRepository';
 import {
-  startForegroundLocationWatching,
-  stopForegroundLocationWatching,
-  startBackgroundLocationTracking,
-  stopBackgroundLocationTracking,
+  startLocationTracking,
+  stopLocationTracking,
   getCurrentGPSFix,
   requestLocationPermissions,
 } from './location';
-import { registerLocationUpdateCallback } from '../tasks/locationTask';
 
 type StateListener = (state: LiveTrackingState) => void;
 
@@ -43,6 +42,7 @@ class TrackingService {
 
   private listeners: Set<StateListener> = new Set();
   private lastRecordedPoint: RawGPSPoint | null = null;
+  private stationaryAnchor: RawGPSPoint | null = null;
   private lastPointReceivedTime: number = 0;
   private isGpsStale: boolean = false;
   private timerInterval: ReturnType<typeof setInterval> | null = null;
@@ -51,10 +51,7 @@ class TrackingService {
   private lastUiNotifyTime: number = 0;
 
   constructor() {
-    // Register global callback for Expo TaskManager background updates
-    registerLocationUpdateCallback((points) => {
-      this.handleIncomingGPSPoints(points);
-    });
+    // Single location subscription lifecycle is managed explicitly in startRide/resumeRide/pauseRide/endRide
   }
 
   public getState(): LiveTrackingState {
@@ -80,7 +77,7 @@ class TrackingService {
       try {
         listener(currentState);
       } catch (err) {
-        console.error('[rideoxy] Error in tracking listener:', err);
+        console.error('[Rideoxy] Error in tracking listener:', err);
       }
     });
   }
@@ -137,7 +134,7 @@ class TrackingService {
       }
       return null;
     } catch (err) {
-      console.warn('[rideoxy] Error checking for active ride:', err);
+      console.warn('[Rideoxy] Error checking for active ride:', err);
       return null;
     }
   }
@@ -145,7 +142,15 @@ class TrackingService {
   /**
    * Start a brand new ride
    */
-  public async startRide(): Promise<{
+  public async startRide(options?: {
+    rideMode?: RideMode;
+    destination?: {
+      name: string;
+      lat: number;
+      lng: number;
+    } | null;
+    manualMinutes?: number | null;
+  }): Promise<{
     success: boolean;
     error?: string;
     errorType?: 'permission' | 'location' | 'database' | 'system';
@@ -196,7 +201,7 @@ class TrackingService {
           });
         }
       } catch (dbErr) {
-        console.error('[rideoxy] [TrackingService] Database failure while creating ride record:', dbErr);
+        console.error('[Rideoxy] [TrackingService] Database failure while creating ride record:', dbErr);
         this.state.status = 'idle';
         this.notifyListeners(true);
         return {
@@ -207,6 +212,7 @@ class TrackingService {
       }
 
       this.lastRecordedPoint = initialFix;
+      this.stationaryAnchor = initialFix;
       this.lastPointReceivedTime = initialFix ? Date.now() : 0;
       this.isGpsStale = false;
       const initialRouteCoords: [number, number][] = initialFix
@@ -241,14 +247,16 @@ class TrackingService {
       // Start duration & staleness watchdog ticker
       this.startDurationTimer();
 
-      // Start background & foreground GPS services
+      // Start authoritative single location tracking subscription
       try {
-        await startBackgroundLocationTracking();
-        await startForegroundLocationWatching((point) => {
+        const trackRes = await startLocationTracking((point) => {
           this.handleIncomingGPSPoints([point]);
         });
+        if (!trackRes.success) {
+          throw new Error('Failed to start location tracking service.');
+        }
       } catch (locErr) {
-        console.error('[rideoxy] [TrackingService] Location tracking service error:', locErr);
+        console.error('[Rideoxy] [TrackingService] Location tracking service error:', locErr);
         this.stopDurationTimer();
         this.state.status = 'idle';
         this.notifyListeners(true);
@@ -263,7 +271,7 @@ class TrackingService {
       return { success: true };
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : String(err);
-      console.error('[rideoxy] [TrackingService] Unexpected error in startRide:', err);
+      console.error('[Rideoxy] [TrackingService] Unexpected error in startRide:', err);
       this.stopDurationTimer();
       this.state.status = 'idle';
       this.notifyListeners(true);
@@ -281,6 +289,9 @@ class TrackingService {
     this.state.currentSpeedKmh = 0;
     this.lastPointReceivedTime = 0;
     this.isGpsStale = true;
+
+    // Stop native location tracking while paused to save battery and prevent unwanted background churn
+    await stopLocationTracking();
 
     await updateRide(this.state.currentRide.id, {
       status: 'paused',
@@ -313,8 +324,13 @@ class TrackingService {
       this.startDurationTimer();
     }
 
-    await startBackgroundLocationTracking();
-    await startForegroundLocationWatching((point) => {
+    // Re-anchor stationary reference upon resume
+    if (this.lastRecordedPoint) {
+      this.stationaryAnchor = this.lastRecordedPoint;
+    }
+
+    // Start single authoritative location subscription
+    await startLocationTracking((point) => {
       this.handleIncomingGPSPoints([point]);
     });
 
@@ -330,8 +346,8 @@ class TrackingService {
     const rideId = this.state.currentRide.id;
     this.state.status = 'finishing';
     this.stopDurationTimer();
-    stopForegroundLocationWatching();
-    await stopBackgroundLocationTracking();
+    await stopLocationTracking();
+    this.stationaryAnchor = null;
 
     const endTime = Date.now();
     const finalRide: Ride = {
@@ -372,8 +388,8 @@ class TrackingService {
    */
   public async discardRide(): Promise<void> {
     this.stopDurationTimer();
-    stopForegroundLocationWatching();
-    await stopBackgroundLocationTracking();
+    await stopLocationTracking();
+    this.stationaryAnchor = null;
 
     if (this.state.currentRide) {
       await deleteRide(this.state.currentRide.id);
@@ -394,8 +410,8 @@ class TrackingService {
    */
   public resetToIdle(): void {
     this.stopDurationTimer();
-    stopForegroundLocationWatching();
-    stopBackgroundLocationTracking();
+    stopLocationTracking();
+    this.stationaryAnchor = null;
 
     this.state = {
       status: 'idle',
@@ -413,6 +429,7 @@ class TrackingService {
       gpsSignalState: 'searching',
     };
     this.lastRecordedPoint = null;
+    this.stationaryAnchor = null;
     this.lastPointReceivedTime = 0;
     this.isGpsStale = false;
     this.notifyListeners(true);
@@ -437,6 +454,7 @@ class TrackingService {
       if (this.isGpsStale) {
         this.isGpsStale = false;
         this.lastRecordedPoint = point;
+        this.stationaryAnchor = point;
         this.lastPointReceivedTime = now;
         this.state.gpsSignalState = 'good';
         this.state.currentLocation = {
@@ -449,34 +467,24 @@ class TrackingService {
         this.state.currentSpeedKmh = 0;
         this.state.lastUpdated = now;
 
-
-        // Add re-anchor coordinate for map display
-        this.state.routeCoordinates.push([point.longitude, point.latitude]);
-        this.state.recentPointsCount++;
-        newCoordsAdded = true;
-
-        const trackPoint: TrackPoint = {
-          ride_id: rideId,
+        console.log('[GPS RE-ANCHOR]', {
+          timestamp: point.timestamp,
           latitude: point.latitude,
           longitude: point.longitude,
-          altitude: point.altitude,
-          speed: point.speed,
-          accuracy: point.accuracy,
-          heading: point.heading,
-          timestamp: point.timestamp,
-        };
-        try {
-          await insertTrackPoint(trackPoint);
-        } catch (err) {
-          console.error('[rideoxy] Failed to insert re-anchor trackpoint:', err);
-        }
-
+          message: 'GPS resumed from stale period. Re-anchored baseline with zero distance/time delta.',
+        });
         continue;
       }
 
-      const validation = validateGPSPoint(point, this.lastRecordedPoint);
+      const validation = validateGPSPoint(point, this.lastRecordedPoint, this.stationaryAnchor);
 
       if (!validation.isValid) {
+        console.log('[GPS REJECTED]', {
+          reason: validation.reason,
+          timestamp: point.timestamp,
+          coordsSpeed: point.speed,
+          calculatedSegmentDistance: validation.segmentDistanceMeters,
+        });
 
         if (point.accuracy && point.accuracy > GPS_CONFIG.MAX_ACCEPTABLE_ACCURACY_METERS) {
           this.state.gpsSignalState = 'poor';
@@ -488,15 +496,6 @@ class TrackingService {
       this.lastPointReceivedTime = now;
       this.state.gpsSignalState = 'good';
 
-      // Update current live location
-      this.state.currentLocation = {
-        latitude: point.latitude,
-        longitude: point.longitude,
-        heading: point.heading,
-        accuracy: point.accuracy,
-        altitude: point.altitude,
-      };
-
       const segmentDistanceKm = (validation.segmentDistanceMeters ?? 0) / 1000;
       const segmentDurationSec = validation.segmentTimeSeconds ?? 0;
       const calculatedSpeedKmh = validation.segmentSpeedKmh ?? 0;
@@ -505,19 +504,52 @@ class TrackingService {
         : 0;
 
       if (validation.isStationaryJitter) {
-        // Vehicle is stationary: speed is 0, do not accumulate distance or moving time
+        // Vehicle is stationary: anchor position to prevent wandering baseline
+        if (!this.stationaryAnchor && this.lastRecordedPoint) {
+          this.stationaryAnchor = this.lastRecordedPoint;
+        }
+
+        // Speed is strictly 0 km/h
         this.state.currentSpeedKmh = 0;
         this.state.lastUpdated = now;
-        this.lastRecordedPoint = point;
 
+        // CRITICAL INVARIANT:
+        // Do NOT update this.state.currentLocation (prevents map camera easing/swimming)
+        // Do NOT update this.lastRecordedPoint (prevents drifting reference)
+        // Do NOT accumulate distance or moving time
+        // Do NOT push to routeCoordinates
+        // Do NOT insert into SQLite trackpoints
+
+        console.log('[GPS SEGMENT - STATIONARY JITTER]', {
+          distance: `${segmentDistanceKm.toFixed(4)} km`,
+          duration: `${segmentDurationSec.toFixed(2)} sec`,
+          calculatedSpeed: `${calculatedSpeedKmh.toFixed(2)} km/h`,
+          reportedSpeed: `${reportedSpeedKmh.toFixed(2)} km/h`,
+          movementAccepted: false,
+          totalDistance: `${this.state.currentDistanceKm.toFixed(4)} km`,
+          movingTime: `${this.state.currentMovingTimeSeconds.toFixed(2)} sec`,
+          averageSpeed: `${this.state.currentAvgSpeedKmh.toFixed(2)} km/h`,
+          maxSpeed: `${this.state.currentMaxSpeedKmh.toFixed(2)} km/h`,
+        });
 
         continue;
       }
 
-      // Valid movement segment:
+      // Valid genuine movement segment: release stationary anchor
+      this.stationaryAnchor = null;
+
       // Single authoritative speed, distance, and duration source
       this.state.currentSpeedKmh = calculatedSpeedKmh;
       this.state.lastUpdated = now;
+
+      // Authoritative location ONLY updates on accepted movement
+      this.state.currentLocation = {
+        latitude: point.latitude,
+        longitude: point.longitude,
+        heading: point.heading,
+        accuracy: point.accuracy,
+        altitude: point.altitude,
+      };
 
       // Update max speed from the SAME calculated segment speed
       if (calculatedSpeedKmh > this.state.currentMaxSpeedKmh && calculatedSpeedKmh <= GPS_CONFIG.MAX_PLAUSIBLE_SPEED_KMH) {
@@ -532,9 +564,21 @@ class TrackingService {
       if (this.state.currentMovingTimeSeconds > 0 && this.state.currentDistanceKm > 0) {
         const movingHours = this.state.currentMovingTimeSeconds / 3600;
         const calculatedAvg = Math.round((this.state.currentDistanceKm / movingHours) * 10) / 10;
-        this.state.currentAvgSpeedKmh = calculatedAvg;
+        // Invariant: Average speed can never exceed max speed
+        this.state.currentAvgSpeedKmh = Math.min(calculatedAvg, this.state.currentMaxSpeedKmh);
       }
 
+      console.log('[GPS SEGMENT - MOVEMENT ACCEPTED]', {
+        distance: `${segmentDistanceKm.toFixed(4)} km`,
+        duration: `${segmentDurationSec.toFixed(2)} sec`,
+        calculatedSpeed: `${calculatedSpeedKmh.toFixed(2)} km/h`,
+        reportedSpeed: `${reportedSpeedKmh.toFixed(2)} km/h`,
+        movementAccepted: true,
+        totalDistance: `${this.state.currentDistanceKm.toFixed(4)} km`,
+        movingTime: `${this.state.currentMovingTimeSeconds.toFixed(2)} sec`,
+        averageSpeed: `${this.state.currentAvgSpeedKmh.toFixed(2)} km/h`,
+        maxSpeed: `${this.state.currentMaxSpeedKmh.toFixed(2)} km/h`,
+      });
 
       // Append coordinate to route for map display
       this.state.routeCoordinates.push([point.longitude, point.latitude]);
@@ -556,7 +600,7 @@ class TrackingService {
       try {
         await insertTrackPoint(trackPoint);
       } catch (err) {
-        console.error('[rideoxy] Failed to insert trackpoint:', err);
+        console.error('[Rideoxy] Failed to insert trackpoint:', err);
       }
 
       this.lastRecordedPoint = point;

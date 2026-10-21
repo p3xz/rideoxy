@@ -1,176 +1,120 @@
-# Rideoxy
+# Rideoxy 🏍️
 
-![Preview](preview.png)
+> **Privacy-first, local-only motorcycle ride tracking and fuel intelligence application.**
 
-> Privacy-first, offline-ready motorcycle ride tracking and fuel telemetry app.
-
-![Status](https://img.shields.io/badge/status-active-brightgreen) ![License](https://img.shields.io/badge/license-MIT-blue)
-
-## What
-
-Rideoxy is a mobile application built for motorcyclists. Track your rides, monitor speeds, analyze fuel efficiency, record maintenance logs, and export your GPX routes, all with complete privacy and zero mandatory cloud accounts.
-
-## Why
-
-Built as a personal project: a privacy-first alternative to cloud-locked ride trackers, made for motorcyclists who want their ride data to stay on their own phone.
-
-## When
-
-September 2026.
+Rideoxy is a high-performance mobile application engineered for motorcyclists. Track your rides, monitor live speeds, analyze fuel efficiency, manage your machine profile, and export GPX routes — with complete on-device privacy, zero telemetry trackers, and no cloud accounts.
 
 ---
 
-## Features
+## 🌟 Implemented Features
 
-- **Precision Ride Tracking**: Background GPS logging with noise filtering, accurate distance calculation (Haversine algorithm), and speed analysis.
-- **Offline-Ready Maps**: Vector map rendering powered by MapLibre GL Native.
-- **Fuel and Maintenance Log**: Track fill-ups, calculate mileage (km/L and MPG), cost per km, and service intervals.
-- **Comprehensive Statistics**: Lifetime distance, top speeds, average speeds, monthly breakdowns, and ride history.
-- **GPX Route Export**: Export any recorded ride to standard `.gpx` files to share or import into Google Earth, Strava, or Garmin.
-- **100% Local and Private**: All ride data, track points, and garage records are stored locally using SQLite on your device.
+- **📍 Precision Ride Tracking**: Authoritative background GPS logging with multi-stage noise filtering, stationary jitter rejection (stationary anchor tracking), sub-second burst deduplication, and accurate Haversine distance calculations.
+- **🗺️ Route & Map Visualization**: Vector map rendering powered by MapLibre Native with OpenFreeMap styles, full route polyline rendering, and graceful offline fallback states.
+- **⛽ Fuel & Mileage Intelligence**: Detailed fill-up logging with full-tank chain calculations (km/L, MPG US/UK, L/100km), cost-per-kilometer/mile, multi-currency formatting (INR, USD, EUR, GBP, AUD, CAD, JPY), and spending trends.
+- **🏍️ Machine Profile & Garage**: Motorcycle profile management with persistent on-device telemetry and lifetime statistics.
+- **📊 Ride Analytics & Records**: Comprehensive lifetime telemetry, monthly ride summaries, personal records (longest ride, highest average speed, top speed), and complete session history.
+- **📁 GPX Route Export**: Export any recorded motorcycle trip to standard `.gpx` files through the operating system share sheet for use in Garmin, Strava, or Google Earth.
+- **🛡️ Interrupted Ride Recovery**: Automatic crash and interruption recovery on app launch, allowing riders to resume or safely save in-progress sessions.
+- **🔒 100% Local & Private**: All ride data, trackpoints, and fuel records are stored strictly in your device's local SQLite database (`rideoxy.db` with seamless backward-compatible migration from the app's earlier database file).
 
----
-
-## Tech Stack
-
-![TypeScript](https://skillicons.dev/icons?i=ts) ![Expo](https://skillicons.dev/icons?i=expo) ![React](https://skillicons.dev/icons?i=react) ![SQLite](https://skillicons.dev/icons?i=sqlite) ![iOS](https://skillicons.dev/icons?i=ios) ![Android](https://skillicons.dev/icons?i=android)
-
-- **Language**: TypeScript
-- **Framework**: [Expo](https://expo.dev/) (SDK 54) and [React Native](https://reactnative.dev/) (0.81)
-- **Routing**: [Expo Router](https://docs.expo.dev/router/introduction/)
-- **Maps**: [@maplibre/maplibre-react-native](https://github.com/maplibre/maplibre-react-native)
-- **Database**: [Expo SQLite](https://docs.expo.dev/versions/latest/sdk/sqlite/)
-- **Background GPS**: [Expo Location](https://docs.expo.dev/versions/latest/sdk/location/) and [Expo TaskManager](https://docs.expo.dev/versions/latest/sdk/task-manager/)
-- **File Export and Sharing**: Expo FileSystem and Expo Sharing
-- **Animations and UI**: React Native Reanimated, Lucide Icons, Safe Area Context
-
-### Why We Used This
-
-- **Expo**: one codebase that builds for both iOS and Android, with managed native modules for the features the app depends on.
-- **Expo Location + TaskManager**: keep GPS logging alive in the background while you ride, even with the screen off.
-- **Expo SQLite**: all rides, track points, fuel logs, and settings stay in an on-device database, which is what makes the app fully private with no server or account needed.
-- **MapLibre GL Native**: vector maps that render recorded routes and work with offline map tiles.
-- **TypeScript**: type safety across screens, repositories, and services so GPS data shapes stay consistent.
-- **Expo FileSystem + Expo Sharing**: write GPX files to the device and open them in Google Earth, Strava, or Garmin.
-- **React Native Reanimated**: smooth animations on the live speed HUD and charts.
+### Planned Features (Intentionally Out of Scope for V1)
+- Lean-angle gyroscope analysis
+- Maintenance reminders and service scheduling
+- Route pace comparison screens
 
 ---
 
-## How It Works
+## 🛠️ Tech Stack
 
-- **Start a ride** from the home tab. The live HUD screen (`app/active-ride.tsx`) shows your speed and current position on the map.
-- **Background tracking** runs through an Expo TaskManager location task (`tasks/locationTask.ts`), which keeps recording GPS points while you ride, screen on or off.
-- **Filtering and math** happen in `services/`: `gpsFilter` cleans noisy fixes, `distance` computes segment distances with the Haversine formula, and `fuelCalculation` derives mileage and cost per km.
-- **Everything is stored locally** in SQLite through the repository layer in `database/` (rides, track points, fuel entries, garage records, settings).
-- **Stats and History tabs** aggregate lifetime distance, top speeds, average speeds, and monthly breakdowns from the stored data.
-- **Fuel tab** logs fill-ups and computes mileage (km/L and MPG), cost per km, and service reminders.
-- **Export** turns any recorded ride into a standard `.gpx` file that you can share or import elsewhere.
+- **Framework**: Expo (SDK 54) & React Native (0.81.5)
+- **Navigation**: Expo Router (v6) file-based routing
+- **Map Engine**: `@maplibre/maplibre-react-native`
+- **Database**: Expo SQLite (Local WAL-mode SQLite database)
+- **Background Location**: Expo Location & Expo TaskManager
+- **File System & Sharing**: Expo FileSystem & Expo Sharing
+- **Styling & UI**: Custom high-contrast cockpit dark theme, Lucide Icons, React Native Safe Area Context
+- **Testing**: Jest, Jest-Expo, ts-jest
 
 ---
 
-## Quick Start
+## 🚀 Getting Started
 
 ### Prerequisites
-
-- [Node.js](https://nodejs.org/) v20 or later (v20+ recommended)
-- [npm](https://www.npmjs.com/) (bundled with Node.js) or [yarn](https://yarnpkg.com/)
-- [Expo CLI](https://docs.expo.dev/more/expo-cli/) via `npx expo`
-- Expo SDK 54 and React Native 0.81, as pinned in `package.json`
+- Node.js (v20+ recommended)
+- npm or yarn
+- Expo CLI (`npx expo`)
 
 ### Installation
 
-1. Clone the repository:
-   ```bash
-   git clone https://github.com/p3xz/rideoxy.git
-   cd rideoxy
-   ```
-
-2. Install dependencies:
+1. Install dependencies:
    ```bash
    npm install
    ```
 
-3. Start the development server:
+2. Run automated test suite:
    ```bash
-   npx expo start
+   npm test
    ```
 
----
+3. Run TypeScript type checks:
+   ```bash
+   npx tsc --noEmit
+   ```
 
-## Usage
+4. Start development server:
+   ```bash
+   npm start
+   ```
 
-Start the development server and scan the QR code with Expo Go to run the app on your phone:
-
-```bash
-npx expo start
-```
-
-From the home tab, start a ride. The live HUD shows your speed and position on the map, and background tracking keeps recording GPS points while you ride.
-
-### Building for iOS (100% free, no paid Apple Developer account)
-
-You do not need a paid Apple Developer account to build and run Rideoxy on your iPhone from Windows.
-
-**Method 1: Automated GitHub Actions (.ipa build)**
-
-1. Push your changes to GitHub.
-2. Go to the **Actions** tab in your GitHub repository.
-3. Select the **`Build iOS IPA (Free / No Apple Dev Account)`** workflow.
-4. Click **Run workflow** on the `master` branch.
-5. Once the build completes, download the **`rideoxy-ios-ipa`** artifact.
-6. Connect your iPhone to your Windows PC via USB and install using **[Sideloadly](https://sideloadly.io/)** with your free personal Apple ID.
-
-**Method 2: EAS iOS simulator build**
-
-If testing on an iOS Simulator or macOS:
-
-```bash
-npx eas-cli build -p ios -e simulator
-```
-
-### Building for Android
-
-Build a standalone APK or AAB for Android using EAS:
-
-```bash
-npx eas-cli build -p android -e preview
-```
+> [!IMPORTANT]
+> **Expo Go Notice**: Rideoxy uses native modules for background location tasks and `@maplibre/maplibre-react-native` vector mapping. Because of these native dependencies, **the app cannot run inside Expo Go**. It must be run using a development build (`npx expo run:ios` or `npx expo run:android`) or a standalone build.
 
 ---
 
-## Project Structure
+## 📱 iOS Build & Free Sideloading
 
-```
-├── app/                  # Expo Router navigation and screens
-│   ├── (tabs)/           # Bottom tab bar screens (Home, Garage, Stats, History, Fuel, Settings)
-│   ├── active-ride.tsx   # Live HUD and GPS tracking screen
-│   ├── fuel-entry.tsx    # Fuel fill-up input modal
-│   └── ride-summary.tsx  # Post-ride summary and stats
-├── components/           # Reusable UI components (SpeedDisplay, RideMap, Cards)
-├── constants/            # Color palettes, GPS configuration, map themes
-├── database/             # SQLite schema, migrations, and repositories
-├── services/             # GPS filtering, distance calculations, GPX exporter, tracking engine
-├── tasks/                # Background location task definitions
-└── types/                # TypeScript data interfaces
-```
+Rideoxy can be built for iOS completely free using GitHub Actions and sideloaded onto your personal iPhone without requiring a paid Apple Developer Program membership.
+
+### 1. Downloading the Build Artifacts
+Every push to `main` builds a simulator `.app` in GitHub Actions. Release tags (`v*`) and manual workflow triggers (`workflow_dispatch`) produce an unsigned `.ipa` package (`Rideoxy-unsigned.ipa`):
+1. Navigate to the **Actions** tab in this GitHub repository.
+2. Select the latest run of **iOS CI & Unsigned Sideload Build**.
+3. Scroll down to the **Artifacts** section and download `Rideoxy-unsigned-ipa`.
+4. Unzip the downloaded file to retrieve `Rideoxy-unsigned.ipa`.
+
+### 2. Free Sideloading onto iPhone (Sideloadly / AltStore / SideStore)
+You can install `Rideoxy-unsigned.ipa` on your physical device using any free sideloading utility and a standard personal Apple ID:
+- **Using Sideloadly** (macOS / Windows):
+  1. Download and install [Sideloadly](https://sideloadly.io/).
+  2. Connect your iPhone via USB.
+  3. Drag and drop `Rideoxy-unsigned.ipa` into Sideloadly.
+  4. Enter your personal Apple ID credentials to sign the app locally with your free developer certificate.
+  5. Click **Start** to install.
+- **Using AltStore or SideStore**:
+  1. Open AltStore or SideStore on your device.
+  2. Tap the `+` icon in the My Apps tab and select `Rideoxy-unsigned.ipa`.
+
+### 3. Enabling Developer Mode (iOS 16+)
+On iOS 16 and later, sideloaded apps require Developer Mode to run:
+1. On your iPhone, open **Settings** > **Privacy & Security**.
+2. Scroll to the bottom and select **Developer Mode**.
+3. Toggle Developer Mode **ON** and reboot your device when prompted.
+4. After rebooting, tap **Turn On** and enter your device passcode.
+5. In **Settings** > **General** > **VPN & Device Management**, tap your Apple ID and select **Trust**.
+
+### 4. Free Apple ID Limits & Preservation Rules
+- **7-Day Expiration**: Apps sideloaded with a free Apple ID expire after 7 days unless refreshed over Wi-Fi (AltStore/SideStore) or re-sideloaded (Sideloadly).
+- **App Quota**: Free Apple IDs allow up to 3 active sideloaded apps per device.
+- **Keep Your Ride Data Safe**:
+  - Always reinstall or refresh over the same bundle identifier (`com.rideoxy.app`). This preserves your local SQLite database (`rideoxy.db`) across updates.
+  - As a best practice, always export your important rides to GPX from the app before performing a reinstall.
+- **Background GPS Verification**: Background GPS logging must be verified on a real physical iPhone, as simulator environments cannot replicate real device power management and satellite reception.
+
+### 5. Official App Store / TestFlight (Paid Developer Account)
+An Apple Developer Program membership ($99/year) is only needed if you want to distribute via TestFlight or the Apple App Store. Job C (`ios-eas-build`) in GitHub Actions can be triggered manually if an `EXPO_TOKEN` secret is configured in your repository settings.
 
 ---
 
-## Credits
+## 📄 License & Attribution
 
-**Namish Yadav**
-- GitHub: [https://github.com/p3xz](https://github.com/p3xz)
-- LinkedIn: [https://www.linkedin.com/in/namish-yadav-639769408/](https://www.linkedin.com/in/namish-yadav-639769408/)
-- Instagram: [https://instagram.com/nam7sh](https://instagram.com/nam7sh)
-
----
-
-## Contributing
-
-Issues and pull requests are welcome. Please keep changes small and focused, with clear commit messages.
-
----
-
-## License
-
-This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
+Rideoxy is open-source software. Vector map tiles and styles provided by OpenFreeMap. Map data © OpenStreetMap contributors.

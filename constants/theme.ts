@@ -1,49 +1,61 @@
 export const Colors = {
-  // Backgrounds
-  background: '#0C0E12',
-  backgroundElevated: '#13171F',
-  surface: '#1A202C',
-  surfaceSubtle: '#232B3B',
-  surfaceHigh: '#2D3748',
-  surfaceBorder: '#2C3545',
-  surfaceBorderHighlight: '#3F4C62',
+  // Deep Neutral Obsidian Base Surfaces
+  background: '#080A09',
+  backgroundSecondary: '#0D1210',
+  backgroundElevated: '#141A17',
+  surface: '#141A17',
+  surfaceSubtle: '#1A221E',
+  surfaceHigh: '#222D27',
 
-  // Brand & Precision Automotive Accent (Cockpit Copper / Amber)
-  primary: '#E58325',
-  primaryMuted: '#A85A18',
-  primaryDark: '#3D1F08',
-  primaryLight: 'rgba(229, 131, 37, 0.12)',
-  primaryGlow: 'rgba(229, 131, 37, 0.20)',
+  // Liquid Glass Material Tints
+  surfaceGlassTint: 'rgba(20, 26, 23, 0.76)',
+  surfaceGlassSecondary: 'rgba(26, 34, 30, 0.58)',
+  surfaceGlassModal: 'rgba(13, 18, 16, 0.90)',
 
-  // Neutral Metallic Accents
-  secondary: '#2B3545',
-  secondaryLight: '#475569',
+  // Fine Borders & Controlled Depth Highlights
+  surfaceBorder: 'rgba(230, 255, 239, 0.10)',
+  surfaceBorderProminent: 'rgba(230, 255, 239, 0.17)',
+  surfaceBorderHighlight: 'rgba(230, 255, 239, 0.24)',
+  glassHighlight: 'rgba(255, 255, 255, 0.07)',
+  glassShine: 'rgba(255, 255, 255, 0.12)',
 
-  // Technical Typography Colors
-  text: '#F3F4F6',
-  textSecondary: '#9CA3AF',
-  textMuted: '#64748B',
-  textDark: '#0C0E12',
+  // Precision Instrument Accents
+  primary: '#63E6A4', // Restrained Primary Emerald
+  primaryMuted: '#254A36', // Subdued Emerald
+  primaryDark: '#0E2419',
+  primaryLight: 'rgba(99, 230, 164, 0.12)',
+  primaryGlow: 'rgba(99, 230, 164, 0.20)',
+
+  // Secondary Telemetry & Route Accent (Precision Cyan)
+  secondary: '#46D9D0',
+  secondaryMuted: '#2B8F89',
+  secondaryLight: 'rgba(70, 217, 208, 0.14)',
+
+  // Typography - Apple Editorial & Swiss Hierarchy
+  text: '#F3F6F3', // Primary Crisp Titanium White
+  textSecondary: '#A3ADA6', // Secondary Slate
+  textMuted: '#8E9892', // Muted Technical Metadata (> 4.5:1 WCAG contrast against #080A09)
+  textDark: '#080A09',
 
   // Status & Utility
-  danger: '#EF4444',
-  dangerSurface: 'rgba(239, 68, 68, 0.12)',
-  dangerBorder: 'rgba(239, 68, 68, 0.35)',
-  warning: '#F59E0B',
-  warningSurface: 'rgba(245, 158, 11, 0.12)',
-  warningBorder: 'rgba(245, 158, 11, 0.35)',
-  info: '#38BDF8',
-  infoSurface: 'rgba(56, 189, 248, 0.12)',
-  success: '#10B981',
-  successSurface: 'rgba(16, 185, 129, 0.12)',
+  danger: '#FF7777',
+  dangerSurface: 'rgba(255, 119, 119, 0.14)',
+  dangerBorder: 'rgba(255, 119, 119, 0.35)',
+  warning: '#F0C879',
+  warningSurface: 'rgba(240, 200, 121, 0.14)',
+  warningBorder: 'rgba(240, 200, 121, 0.35)',
+  info: '#46D9D0',
+  infoSurface: 'rgba(70, 217, 208, 0.14)',
+  success: '#63F2A6',
+  successSurface: 'rgba(99, 242, 166, 0.14)',
 
   // Map & Route Telemetry
-  routeLine: '#E58325',
-  routeLineOutline: '#1E1208',
-  routeInactive: '#475569',
-  markerStart: '#F3F4F6',
-  markerEnd: '#EF4444',
-  markerCurrent: '#E58325',
+  routeLine: '#46D9D0',
+  routeLineOutline: '#070909',
+  routeInactive: '#2C3833',
+  markerStart: '#F2F7F4',
+  markerEnd: '#FF7777',
+  markerCurrent: '#63F2A6',
 };
 
 export const Typography = {
@@ -59,4 +71,13 @@ export const Spacing = {
   xl: 20,
   xxl: 24,
   xxxl: 32,
+};
+
+export const BorderRadius = {
+  xs: 4,
+  sm: 6,
+  md: 10,
+  lg: 14,
+  xl: 18,
+  full: 9999,
 };

@@ -12,21 +12,23 @@ export const Wordmark: React.FC<WordmarkProps> = ({
   size = 'md',
   showTagline = true,
 }) => {
-  const logoSize = size === 'lg' ? 42 : size === 'md' ? 32 : 24;
-  const titleSize = size === 'lg' ? 24 : size === 'md' ? 20 : 16;
-  const subtitleSize = size === 'lg' ? 11 : size === 'md' ? 10 : 9;
+  const logoSize = size === 'lg' ? 38 : size === 'md' ? 28 : 20;
+  const titleSize = size === 'lg' ? 22 : size === 'md' ? 18 : 15;
+  const subtitleSize = size === 'lg' ? 10 : size === 'md' ? 9 : 8;
 
   return (
     <View style={styles.container}>
       <Logo size={logoSize} />
       <View style={styles.textContainer}>
         <View style={styles.titleRow}>
-          <Text style={[styles.brandText, { fontSize: titleSize }]}>Rideoxy</Text>
+          <Text style={[styles.brandText, { fontSize: titleSize }]}>
+            Ride<Text style={{ color: Colors.primary }}>oxy</Text>
+          </Text>
           <View style={styles.accentDot} />
         </View>
         {showTagline && (
           <Text style={[styles.taglineText, { fontSize: subtitleSize }]}>
-            Motorcycle Telemetry & Log
+            MOTORCYCLE TELEMETRY
           </Text>
         )}
       </View>
@@ -48,22 +50,23 @@ const styles = StyleSheet.create({
     alignItems: 'baseline',
   },
   brandText: {
-    fontWeight: '900',
+    fontWeight: '800',
     color: Colors.text,
-    letterSpacing: -0.5,
+    letterSpacing: -0.6,
   },
   accentDot: {
-    width: 5,
-    height: 5,
-    borderRadius: 2.5,
+    width: 4,
+    height: 4,
+    borderRadius: 2,
     backgroundColor: Colors.primary,
     marginLeft: 3,
     marginBottom: 2,
   },
   taglineText: {
-    color: Colors.textSecondary,
-    fontWeight: '600',
-    letterSpacing: 0.4,
+    color: Colors.textMuted,
+    fontWeight: '700',
+    letterSpacing: 1.2,
     marginTop: 1,
+    fontSize: 8.5,
   },
 });

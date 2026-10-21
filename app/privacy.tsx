@@ -3,7 +3,7 @@ import { StyleSheet, View, Text, ScrollView, TouchableOpacity } from 'react-nati
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Colors } from '../constants/theme';
-import { ChevronLeft, ShieldCheck } from 'lucide-react-native';
+import { ChevronLeft, ShieldCheck, Database, MapPin, Share2, ServerOff } from 'lucide-react-native';
 
 export default function PrivacyPolicyScreen() {
   const router = useRouter();
@@ -33,7 +33,7 @@ export default function PrivacyPolicyScreen() {
           <ShieldCheck size={28} color={Colors.primary} />
           <Text style={styles.bannerTitle}>Local-First Motorcycle Telemetry</Text>
           <Text style={styles.bannerSubtitle}>
-            Rideoxy does not transmit ride or GPS telemetry to remote cloud servers in V1. Your riding records reside exclusively on this device.
+            Rideoxy does not transmit ride, speed, or GPS telemetry to remote servers. All telemetry and refuelling records reside strictly on your device.
           </Text>
         </View>
 
@@ -41,13 +41,32 @@ export default function PrivacyPolicyScreen() {
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>1. Summary of Data Practices</Text>
           <Text style={styles.paragraph}>
-            Rideoxy is built as a focused, offline-first motorcycle ride recorder:
+            Rideoxy is designed as a secure, private, offline-first motorcycle riding companion:
           </Text>
-          <View style={styles.bulletList}>
-            <Text style={styles.bulletItem}>• <Text style={styles.boldText}>No Accounts:</Text> You do not need to register, provide an email, or sign in to use the app.</Text>
-            <Text style={styles.bulletItem}>• <Text style={styles.boldText}>No Cloud Database:</Text> All recorded trackpoints, speeds, timestamps, and personal records reside exclusively in your device's local SQLite database.</Text>
-            <Text style={styles.bulletItem}>• <Text style={styles.boldText}>No Advertising:</Text> Rideoxy contains no third-party advertising SDKs or tracking pixels.</Text>
-            <Text style={styles.bulletItem}>• <Text style={styles.boldText}>No Telemetry Selling:</Text> Your location history is never sold, shared, or monetized.</Text>
+          <View style={styles.pillarGrid}>
+            <View style={styles.pillarItem}>
+              <ServerOff size={16} color={Colors.primary} />
+              <View style={{ flex: 1 }}>
+                <Text style={styles.pillarTitle}>No Accounts</Text>
+                <Text style={styles.pillarSubtitle}>Zero registration, passwords, or emails required.</Text>
+              </View>
+            </View>
+
+            <View style={styles.pillarItem}>
+              <Database size={16} color={Colors.primary} />
+              <View style={{ flex: 1 }}>
+                <Text style={styles.pillarTitle}>On-Device Storage</Text>
+                <Text style={styles.pillarSubtitle}>All trackpoints and fuel logs reside exclusively in local SQLite.</Text>
+              </View>
+            </View>
+
+            <View style={styles.pillarItem}>
+              <Share2 size={16} color={Colors.primary} />
+              <View style={{ flex: 1 }}>
+                <Text style={styles.pillarTitle}>No Tracking or Ads</Text>
+                <Text style={styles.pillarSubtitle}>Contains zero analytics beacons, trackers, or telemetry brokers.</Text>
+              </View>
+            </View>
           </View>
         </View>
 
@@ -55,29 +74,66 @@ export default function PrivacyPolicyScreen() {
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>2. Location Telemetry & Background Use</Text>
           <Text style={styles.paragraph}>
-            Rideoxy accesses your device's GPS receiver while recording a motorcycle trip:
+            Rideoxy accesses your device's high-precision GPS hardware strictly during recorded motorcycle trips:
+          </Text>
+          <View style={styles.card}>
+            <View style={styles.cardRow}>
+              <MapPin size={16} color={Colors.primary} />
+              <View style={{ flex: 1 }}>
+                <Text style={styles.boldText}>Foreground Location</Text>
+                <Text style={styles.paragraph}>
+                  Calculates real-time speed, total distance, moving duration, and live route lines on the active cockpit HUD.
+                </Text>
+              </View>
+            </View>
+
+            <View style={styles.divider} />
+
+            <View style={styles.cardRow}>
+              <MapPin size={16} color={Colors.primary} />
+              <View style={{ flex: 1 }}>
+                <Text style={styles.boldText}>Background Location</Text>
+                <Text style={styles.paragraph}>
+                  Maintains continuous recording when the screen turns off or the phone is mounted in a pocket or bag.
+                </Text>
+              </View>
+            </View>
+
+            <View style={styles.divider} />
+
+            <View style={styles.cardRow}>
+              <MapPin size={16} color={Colors.primary} />
+              <View style={{ flex: 1 }}>
+                <Text style={styles.boldText}>Session Bound</Text>
+                <Text style={styles.paragraph}>
+                  Hardware location polling terminates immediately when you pause, finish, or discard your ride.
+                </Text>
+              </View>
+            </View>
+          </View>
+        </View>
+
+        {/* 3. Ride Modes and Network Transmission */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>3. Ride Modes & Network Privacy</Text>
+          <Text style={styles.paragraph}>
+            Free Ride mode sends nothing over the network. Zero data is sent during or after the ride.
           </Text>
           <Text style={styles.paragraph}>
-            <Text style={styles.boldText}>Foreground Location:</Text> Used to calculate real-time speed, total distance, moving time, and live route lines on the active cockpit map.
-          </Text>
-          <Text style={styles.paragraph}>
-            <Text style={styles.boldText}>Background Location:</Text> Used during an active ride so your route continues recording when your phone screen is locked or mounted.
-          </Text>
-          <Text style={styles.paragraph}>
-            <Text style={styles.boldText}>Immediate Termination:</Text> Location recording stops immediately when you pause or finish your ride.
+            Destination mode sends only your destination name to OpenStreetMap Nominatim for geocoding, and two coordinate pairs (start and destination) to OSRM to estimate travel time at ride start. Nothing is sent during or after the ride.
           </Text>
         </View>
 
-        {/* 3. Local Storage & User Control */}
+        {/* 4. Local Storage & User Control */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>3. Local Storage & Control</Text>
+          <Text style={styles.sectionTitle}>4. Local Storage & Export Control</Text>
           <Text style={styles.paragraph}>
-            Every trackpoint (latitude, longitude, speed, heading, timestamp) is stored locally in SQLite.
+            Every trackpoint (latitude, longitude, speed, heading, timestamp) and fuel log is under your direct control:
           </Text>
           <View style={styles.bulletList}>
-            <Text style={styles.bulletItem}>• You can export individual rides as standardized GPX files.</Text>
-            <Text style={styles.bulletItem}>• You can delete individual rides at any time.</Text>
-            <Text style={styles.bulletItem}>• You can permanently erase all recorded rides via Settings.</Text>
+            <Text style={styles.bulletItem}>• Export any recorded ride as an open standard GPX file via the native share sheet.</Text>
+            <Text style={styles.bulletItem}>• Delete individual rides or fuel entries at any time.</Text>
+            <Text style={styles.bulletItem}>• Permanently purge all local databases via Settings.</Text>
           </View>
         </View>
 
@@ -85,13 +141,13 @@ export default function PrivacyPolicyScreen() {
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>4. Map Providers & Tile Services</Text>
           <Text style={styles.paragraph}>
-            To display maps, Rideoxy utilizes MapLibre Native, OpenFreeMap vector tile hosting, and OpenStreetMap data. No personal ride tracks are sent to map tile providers.
+            To display maps, Rideoxy utilizes MapLibre Native, OpenFreeMap vector tile servers, and OpenStreetMap data. Your personal ride trajectories are rendered locally on-device and are never uploaded to tile providers.
           </Text>
         </View>
 
-        {/* 5. Contact */}
+        {/* 6. Contact */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>5. Developer & Contact</Text>
+          <Text style={styles.sectionTitle}>5. Application Identity & Contact</Text>
           <View style={styles.contactCard}>
             <Text style={styles.contactText}><Text style={styles.boldText}>Application:</Text> Rideoxy (V1)</Text>
             <Text style={styles.contactText}><Text style={styles.boldText}>Developer:</Text> Namish Yadav</Text>
@@ -99,7 +155,7 @@ export default function PrivacyPolicyScreen() {
           </View>
         </View>
 
-        <Text style={styles.effectiveDate}>Last updated: 2026</Text>
+        <Text style={styles.effectiveDate}>Rideoxy · Privacy-first motorcycle telemetry · 2026</Text>
       </ScrollView>
     </SafeAreaView>
   );
@@ -140,67 +196,117 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     paddingHorizontal: 16,
-    paddingTop: 14,
-    paddingBottom: 32,
+    paddingTop: 16,
+    paddingBottom: 36,
   },
   banner: {
     backgroundColor: Colors.surface,
-    borderRadius: 12,
-    padding: 16,
+    borderRadius: 14,
+    padding: 18,
     alignItems: 'center',
     borderWidth: 1,
     borderColor: Colors.surfaceBorder,
-    marginBottom: 18,
+    marginBottom: 20,
+    gap: 8,
   },
   bannerTitle: {
     color: Colors.text,
     fontSize: 16,
     fontWeight: '800',
-    marginTop: 8,
-    marginBottom: 4,
     textAlign: 'center',
   },
   bannerSubtitle: {
     color: Colors.textSecondary,
     fontSize: 12,
     textAlign: 'center',
-    lineHeight: 17,
+    lineHeight: 18,
   },
   section: {
-    marginBottom: 18,
+    marginBottom: 20,
   },
   sectionTitle: {
     color: Colors.text,
     fontSize: 14,
     fontWeight: '800',
+    letterSpacing: 0.2,
     marginBottom: 8,
   },
   paragraph: {
     color: Colors.textSecondary,
+    fontSize: 12,
+    lineHeight: 18,
+    marginBottom: 6,
+  },
+  pillarGrid: {
+    backgroundColor: Colors.surface,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: Colors.surfaceBorder,
+    padding: 12,
+    gap: 12,
+    marginTop: 6,
+  },
+  pillarItem: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 10,
+  },
+  pillarTitle: {
+    color: Colors.text,
     fontSize: 13,
-    lineHeight: 19,
-    marginBottom: 8,
+    fontWeight: '700',
+    marginBottom: 2,
+  },
+  pillarSubtitle: {
+    color: Colors.textMuted,
+    fontSize: 11,
+    lineHeight: 15,
+  },
+  card: {
+    backgroundColor: Colors.surface,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: Colors.surfaceBorder,
+    padding: 12,
+    marginTop: 6,
+  },
+  cardRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 10,
+    paddingVertical: 4,
+  },
+  divider: {
+    height: 1,
+    backgroundColor: Colors.surfaceBorder,
+    marginVertical: 8,
   },
   boldText: {
     color: Colors.text,
     fontWeight: '700',
+    fontSize: 12,
+    marginBottom: 2,
   },
   bulletList: {
-    paddingLeft: 4,
-    gap: 6,
-    marginBottom: 8,
+    backgroundColor: Colors.surface,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: Colors.surfaceBorder,
+    padding: 14,
+    gap: 8,
+    marginTop: 4,
   },
   bulletItem: {
     color: Colors.textSecondary,
-    fontSize: 13,
-    lineHeight: 18,
+    fontSize: 12,
+    lineHeight: 17,
   },
   contactCard: {
     backgroundColor: Colors.surface,
-    borderRadius: 10,
-    padding: 14,
+    borderRadius: 12,
     borderWidth: 1,
     borderColor: Colors.surfaceBorder,
+    padding: 14,
     gap: 4,
     marginTop: 4,
   },
@@ -212,6 +318,7 @@ const styles = StyleSheet.create({
     color: Colors.textMuted,
     fontSize: 11,
     textAlign: 'center',
-    marginTop: 8,
+    marginTop: 12,
+    fontWeight: '600',
   },
 });

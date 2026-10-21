@@ -13,6 +13,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Colors } from '../../constants/theme';
 import { RideMap } from '../../components/RideMap';
 import { RideStats } from '../../components/RideStats';
+import { RoutePaceSummary } from '../../components/RoutePaceSummary';
 import { getRideById, deleteRide } from '../../database/rideRepository';
 import { getTrackPointsByRideId } from '../../database/trackPointRepository';
 import { exportRideToGPX } from '../../services/gpxExport';
@@ -38,7 +39,7 @@ export default function RideDetailScreen() {
         setRide(rideData);
         setRouteCoords(points.map((pt) => [pt.longitude, pt.latitude]));
       } catch (err) {
-        console.error('[rideoxy] Error loading ride details:', err);
+        console.error('[Rideoxy] Error loading ride details:', err);
       } finally {
         setLoading(false);
       }
@@ -120,6 +121,16 @@ export default function RideDetailScreen() {
       })
     : null;
 
+  const paceSecPerKm =
+    ride.distance > 0 && ride.moving_time
+      ? Math.round(ride.moving_time / ride.distance)
+      : null;
+  const paceMinutes = paceSecPerKm ? Math.floor(paceSecPerKm / 60) : 0;
+  const paceSeconds = paceSecPerKm ? paceSecPerKm % 60 : 0;
+  const paceDisplay = paceSecPerKm
+    ? `${paceMinutes}:${String(paceSeconds).padStart(2, '0')}`
+    : '—';
+
   return (
     <SafeAreaView style={styles.safeArea} edges={['top', 'left', 'right', 'bottom']}>
       {/* Header */}
@@ -132,7 +143,7 @@ export default function RideDetailScreen() {
           <ChevronLeft size={22} color={Colors.text} />
         </TouchableOpacity>
 
-        <Text style={styles.headerTitle}>RIDE DETAILS</Text>
+        <Text style={styles.headerTitle}>RIDE TELEMETRY</Text>
 
         <TouchableOpacity
           onPress={handleDeleteRide}
@@ -184,6 +195,25 @@ export default function RideDetailScreen() {
             maxSpeedKmh={ride.max_speed}
             mode="summary"
           />
+        </View>
+
+        {/* Pace & Route Telemetry Card */}
+        <View style={styles.paceCard}>
+          <View style={styles.paceItem}>
+            <Text style={styles.paceLabel}>AVERAGE PACE</Text>
+            <View style={styles.paceValueRow}>
+              <Text style={styles.paceValue}>{paceDisplay}</Text>
+              <Text style={styles.paceUnit}>/KM</Text>
+            </View>
+          </View>
+          <View style={styles.paceDivider} />
+          <View style={styles.paceItem}>
+            <Text style={styles.paceLabel}>GPS DATA POINTS</Text>
+            <View style={styles.paceValueRow}>
+              <Text style={styles.paceValue}>{routeCoords.length}</Text>
+              <Text style={styles.paceUnit}>FIXES</Text>
+            </View>
+          </View>
         </View>
 
         {/* Export GPX Action Button */}
@@ -277,7 +307,53 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.surfaceBorder,
   },
   statsContainer: {
+    marginBottom: 10,
+  },
+  paceCard: {
+    flexDirection: 'row',
+    backgroundColor: Colors.surface,
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    borderWidth: 1,
+    borderColor: Colors.surfaceBorder,
+    alignItems: 'center',
+    justifyContent: 'space-around',
     marginBottom: 16,
+  },
+  paceItem: {
+    flex: 1,
+    alignItems: 'center',
+  },
+  paceLabel: {
+    color: Colors.textMuted,
+    fontSize: 8,
+    fontWeight: '800',
+    letterSpacing: 0.8,
+    marginBottom: 2,
+  },
+  paceValueRow: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    gap: 3,
+  },
+  paceValue: {
+    color: Colors.text,
+    fontSize: 18,
+    fontWeight: '900',
+    fontVariant: ['tabular-nums'],
+    letterSpacing: -0.5,
+  },
+  paceUnit: {
+    color: Colors.primary,
+    fontSize: 9,
+    fontWeight: '800',
+    letterSpacing: 0.5,
+  },
+  paceDivider: {
+    width: 1,
+    height: 24,
+    backgroundColor: Colors.surfaceBorder,
   },
   exportBtn: {
     height: 50,

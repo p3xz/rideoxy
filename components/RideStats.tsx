@@ -26,37 +26,47 @@ export const RideStats: React.FC<RideStatsProps> = ({
 
   if (mode === 'active') {
     return (
-      <View style={styles.gridContainer}>
-        {/* Distance Card */}
-        <View style={styles.statCard}>
-          <Text style={styles.statLabel}>DISTANCE</Text>
-          <View style={styles.valUnitRow}>
-            <Text style={styles.statValue}>{formatDistance(distanceKm, unit).split(' ')[0]}</Text>
-            <Text style={styles.statUnit}>{unit.toUpperCase()}</Text>
+      <View style={styles.activeInstrumentPanel}>
+        <View style={styles.activeRow}>
+          {/* Distance */}
+          <View style={styles.activeCol}>
+            <Text style={styles.activeLabel}>DISTANCE</Text>
+            <View style={styles.activeValueRow}>
+              <Text style={styles.activeValue}>{formatDistance(distanceKm, unit).split(' ')[0]}</Text>
+              <Text style={styles.activeUnit}>{unit.toUpperCase()}</Text>
+            </View>
+          </View>
+
+          <View style={styles.activeDividerVert} />
+
+          {/* Duration */}
+          <View style={styles.activeCol}>
+            <Text style={styles.activeLabel}>DURATION</Text>
+            <Text style={styles.activeValue}>{formatStopwatch(durationSeconds)}</Text>
           </View>
         </View>
 
-        {/* Duration Card */}
-        <View style={styles.statCard}>
-          <Text style={styles.statLabel}>DURATION</Text>
-          <Text style={styles.statValue}>{formatStopwatch(durationSeconds)}</Text>
-        </View>
+        <View style={styles.activeDividerHoriz} />
 
-        {/* Avg Speed Card */}
-        <View style={styles.statCard}>
-          <Text style={styles.statLabel}>AVG SPEED</Text>
-          <View style={styles.valUnitRow}>
-            <Text style={styles.statValue}>{Math.round(avgSpeedKmh)}</Text>
-            <Text style={styles.statUnit}>{speedUnit.toUpperCase()}</Text>
+        <View style={styles.activeRow}>
+          {/* Avg Speed */}
+          <View style={styles.activeCol}>
+            <Text style={styles.activeLabel}>AVG SPEED</Text>
+            <View style={styles.activeValueRow}>
+              <Text style={styles.activeValue}>{Math.round(avgSpeedKmh)}</Text>
+              <Text style={styles.activeUnit}>{speedUnit.toUpperCase()}</Text>
+            </View>
           </View>
-        </View>
 
-        {/* Top Speed Card */}
-        <View style={styles.statCard}>
-          <Text style={styles.statLabel}>MAX SPEED</Text>
-          <View style={styles.valUnitRow}>
-            <Text style={styles.statValue}>{Math.round(maxSpeedKmh)}</Text>
-            <Text style={styles.statUnit}>{speedUnit.toUpperCase()}</Text>
+          <View style={styles.activeDividerVert} />
+
+          {/* Max Speed */}
+          <View style={styles.activeCol}>
+            <Text style={styles.activeLabel}>MAX SPEED</Text>
+            <View style={styles.activeValueRow}>
+              <Text style={styles.activeValue}>{Math.round(maxSpeedKmh)}</Text>
+              <Text style={styles.activeUnit}>{speedUnit.toUpperCase()}</Text>
+            </View>
           </View>
         </View>
       </View>
@@ -110,50 +120,63 @@ export const RideStats: React.FC<RideStatsProps> = ({
 };
 
 const styles = StyleSheet.create({
-  gridContainer: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-    justifyContent: 'space-between',
-  },
-  statCard: {
-    width: '48.5%',
+  activeInstrumentPanel: {
     backgroundColor: Colors.surface,
     borderRadius: 12,
-    paddingVertical: 12,
-    paddingHorizontal: 12,
-    alignItems: 'flex-start',
     borderWidth: 1,
     borderColor: Colors.surfaceBorder,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
   },
-  statLabel: {
+  activeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 6,
+  },
+  activeCol: {
+    flex: 1,
+    paddingHorizontal: 6,
+  },
+  activeLabel: {
     color: Colors.textMuted,
     fontSize: 9,
     fontWeight: '800',
     letterSpacing: 1,
-    marginBottom: 4,
+    marginBottom: 3,
   },
-  valUnitRow: {
+  activeValueRow: {
     flexDirection: 'row',
     alignItems: 'baseline',
     gap: 4,
   },
-  statValue: {
+  activeValue: {
     color: Colors.text,
     fontSize: 22,
     fontWeight: '900',
     fontVariant: ['tabular-nums'],
     letterSpacing: -0.5,
   },
-  statUnit: {
-    color: Colors.primary,
-    fontSize: 10,
-    fontWeight: '800',
-    letterSpacing: 0.5,
+  activeUnit: {
+    color: Colors.textSecondary,
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 0.3,
+    textTransform: 'lowercase',
+  },
+  activeDividerVert: {
+    width: 1,
+    height: 32,
+    backgroundColor: Colors.surfaceBorder,
+  },
+  activeDividerHoriz: {
+    height: 1,
+    backgroundColor: Colors.surfaceBorder,
+    marginVertical: 4,
   },
   summaryContainer: {
     backgroundColor: Colors.surface,
-    borderRadius: 14,
+    borderRadius: 12,
     padding: 16,
     borderWidth: 1,
     borderColor: Colors.surfaceBorder,
@@ -175,14 +198,14 @@ const styles = StyleSheet.create({
   },
   summaryPrimaryValue: {
     color: Colors.text,
-    fontSize: 24,
+    fontSize: 26,
     fontWeight: '900',
     letterSpacing: -0.5,
     fontVariant: ['tabular-nums'],
   },
   summaryDividerVert: {
     width: 1,
-    height: 36,
+    height: 38,
     backgroundColor: Colors.surfaceBorder,
     marginHorizontal: 12,
   },

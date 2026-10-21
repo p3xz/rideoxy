@@ -1,66 +1,90 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import {
-  StyleSheet,
-  View,
-  Text,
-  ScrollView,
-  TouchableOpacity,
-  Alert,
-  RefreshControl,
-} from 'react-native';
+import { StyleSheet, View, Text, ScrollView, Pressable, Alert, RefreshControl } from 'react-native';
 import { useRouter, useFocusEffect } from 'expo-router';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { StatusBar } from 'expo-status-bar';
+import { ChevronRight } from 'lucide-react-native';
 import { Colors } from '../../constants/theme';
-import { Wordmark } from '../../components/svg/Wordmark';
-import { MotorcycleIllustration } from '../../components/svg/MotorcycleIllustration';
-import { StartRideButton } from '../../components/StartRideButton';
-import { RideCard } from '../../components/RideCard';
 import { Ride } from '../../types/ride';
-import { HomeStatistics } from '../../types/statistics';
+import { OverallStatistics } from '../../types/statistics';
 import { LiveTrackingState } from '../../types/tracking';
-import { getHomeStatistics } from '../../database/statisticsService';
+import { getOverallStatistics } from '../../database/statisticsService';
 import { getRecentCompletedRides } from '../../database/rideRepository';
+import { getTrackPointsByRideId } from '../../database/trackPointRepository';
 import { getBikeName } from '../../database/settingsRepository';
 import { trackingService } from '../../services/tracking';
-import { formatDuration } from '../../services/distance';
-import { ChevronRight, Wrench, Navigation, Radio } from 'lucide-react-native';
+import { formatStopwatch } from '../../services/distance';
+import { HomeHeroBackdrop, HomeHeader, HeroTelemetry } from '../../components/home/HomeHero';
+import { HomeStatsPanel } from '../../components/home/HomeStatsPanel';
+import { StartRideCTA } from '../../components/home/StartRideCTA';
+import { DestinationStartFlow } from '../../components/home/DestinationStartFlow';
+import { RideMode } from '../../types/ride';
+import { GeocodeResult } from '../../services/etaService';
+import {
+  RecentRideRow,
+  RecentRidesSkeleton,
+  RecentRidesEmpty,
+} from '../../components/home/RecentRides';
+import { GarageShortcut } from '../../components/home/GarageShortcut';
+import { useTabBarHeight } from '../../components/FloatingTabBar';
+
+const H_PAD = 20;
+
+const EMPTY_STATS: OverallStatistics = {
+  totalDistanceKm: 0,
+  totalRidesCount: 0,
+  totalDurationSeconds: 0,
+  totalMovingTimeSeconds: 0,
+  overallAverageSpeedKmh: 0,
+  topSpeedKmh: 0,
+  longestRideDistanceKm: 0,
+  longestRideDurationSeconds: 0,
+  averageRideDistanceKm: 0,
+  thisMonthDistanceKm: 0,
+};
 
 export default function HomeScreen() {
   const router = useRouter();
-  const [stats, setStats] = useState<HomeStatistics>({
-    thisMonthKm: 0,
-    totalKm: 0,
-    totalRides: 0,
-    topSpeedKmh: 0,
-    avgSpeedKmh: 0,
-  });
-  const [recentRides, setRecentRides] = useState<Ride[]>([]);
-  const [bikeName, setBikeName] = useState<string>('');
-  const [liveTracking, setLiveTracking] = useState<LiveTrackingState>(
-    trackingService.getState()
-  );
-  const [loading, setLoading] = useState(false);
-  const [refreshing, setRefreshing] = useState(false);
+  const insets = useSafeAreaInsets();
+  const tabBarHeight = useTabBarHeight();
 
-  useEffect(() => {
-    const unsubscribe = trackingService.subscribe((state) => {
-      setLiveTracking(state);
-    });
-    return () => unsubscribe();
-  }, []);
+  const [stats, setStats] = useState<OverallStatistics>(EMPTY_STATS);
+  const [recentRides, setRecentRides] = useState<Ride[]>([]);
+  const [routes, setRoutes] = useState<Record<string, [number, number][]>>({});
+  const [bikeName, setBikeName] = useState('');
+  const [loaded, setLoaded] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+  const [starting, setStarting] = useState(false);
+  const [rideMode, setRideMode] = useState<RideMode>('free');
+  const [selectedDestination, setSelectedDestination] = useState<GeocodeResult | null>(null);
+  const [manualMinutes, setManualMinutes] = useState<string>('');
+  const [live, setLive] = useState<LiveTrackingState>(trackingService.getState());
+
+  useEffect(() => trackingService.subscribe(setLive), []);
 
   const loadData = useCallback(async () => {
     try {
-      const [homeStats, rides, storedBike] = await Promise.all([
-        getHomeStatistics(),
+      const [overall, rides, bike] = await Promise.all([
+        getOverallStatistics(),
         getRecentCompletedRides(3),
         getBikeName(),
       ]);
-      setStats(homeStats);
+      setStats(overall);
       setRecentRides(rides);
-      setBikeName(storedBike);
+      setBikeName(bike);
+
+      const pointSets = await Promise.all(
+        rides.map((r) => getTrackPointsByRideId(r.id).catch(() => []))
+      );
+      const map: Record<string, [number, number][]> = {};
+      rides.forEach((r, i) => {
+        map[r.id] = pointSets[i].map((p) => [p.longitude, p.latitude] as [number, number]);
+      });
+      setRoutes(map);
     } catch (err) {
-      console.error('[rideoxy] Error loading home data:', err);
+      console.error('[Rideoxy] Error loading home data:', err);
+    } finally {
+      setLoaded(true);
     }
   }, []);
 
@@ -76,527 +100,197 @@ export default function HomeScreen() {
     setRefreshing(false);
   };
 
-  const handleStartRide = async () => {
-    setLoading(true);
-    const result = await trackingService.startRide();
-    setLoading(false);
+  const isRideActive = live.status === 'running' || live.status === 'paused';
+
+  const handlePrimaryAction = async () => {
+    if (isRideActive) {
+      router.push('/active-ride');
+      return;
+    }
+    if (rideMode === 'destination' && !selectedDestination) {
+      Alert.alert(
+        'Destination Required',
+        'Please search and select a destination from the list, or switch to Free Ride.'
+      );
+      return;
+    }
+
+    setStarting(true);
+    const parsedMins = parseInt(manualMinutes, 10);
+    const result = await trackingService.startRide({
+      rideMode,
+      destination:
+        rideMode === 'destination' && selectedDestination
+          ? {
+              name: selectedDestination.name,
+              lat: selectedDestination.lat,
+              lng: selectedDestination.lng,
+            }
+          : null,
+      manualMinutes: Number.isFinite(parsedMins) && parsedMins > 0 ? parsedMins : null,
+    });
+    setStarting(false);
 
     if (result.success) {
       router.push('/active-ride');
+    } else if (result.errorType === 'permission' || result.errorType === 'location') {
+      Alert.alert(
+        'GPS Location Required',
+        result.error ?? 'Please enable location permissions in settings to record rides.'
+      );
+    } else if (result.errorType === 'database') {
+      Alert.alert('Database Error', `Could not initialize ride in local storage:\n${result.error}`);
     } else {
-      if (result.errorType === 'permission' || result.errorType === 'location') {
-        Alert.alert(
-          'GPS Location Required',
-          result.error ?? 'Please enable location permissions in settings to record rides.'
-        );
-      } else if (result.errorType === 'database') {
-        Alert.alert(
-          'Database Error',
-          `Could not initialize ride in local storage:\n${result.error}`
-        );
-      } else {
-        Alert.alert(
-          'Unable to Start Ride',
-          result.error ?? 'An unexpected error occurred while starting the ride.'
-        );
-      }
+      Alert.alert(
+        'Unable to Start Ride',
+        result.error ?? 'An unexpected error occurred while starting the ride.'
+      );
     }
   };
 
-  const isRideActive =
-    liveTracking.status === 'running' || liveTracking.status === 'paused';
+  const activeLabel = isRideActive
+    ? `${live.status === 'paused' ? 'Paused' : 'Recording'} · ${live.currentDistanceKm.toFixed(1)} km · ${formatStopwatch(live.currentDurationSeconds)}`
+    : null;
 
   return (
-    <SafeAreaView style={styles.safeArea} edges={['top', 'left', 'right']}>
+    <View style={styles.screen}>
+      <StatusBar style="light" />
       <ScrollView
-        style={styles.scrollView}
-        contentContainerStyle={styles.scrollContent}
+        style={styles.scroll}
+        contentContainerStyle={{
+          paddingTop: insets.top + 14,
+          paddingBottom: tabBarHeight,
+        }}
         showsVerticalScrollIndicator={false}
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
             onRefresh={handleRefresh}
-            tintColor={Colors.primary}
+            tintColor={Colors.textSecondary}
+            progressBackgroundColor={Colors.surface}
+            colors={[Colors.primary]}
           />
         }
       >
-        {/* Top Header: Brand & Machine Badge */}
-        <View style={styles.header}>
-          <Wordmark size="md" showTagline={false} />
+        <HomeHeroBackdrop />
 
-          <TouchableOpacity
-            style={styles.machineBadge}
-            onPress={() => router.push('/(tabs)/garage')}
-            activeOpacity={0.7}
-          >
-            <Wrench size={12} color={Colors.primary} />
-            <Text style={styles.machineBadgeText} numberOfLines={1} ellipsizeMode="tail">
-              {bikeName ? bikeName.toUpperCase() : 'SELECT MACHINE'}
-            </Text>
-            <ChevronRight size={12} color={Colors.textMuted} />
-          </TouchableOpacity>
-        </View>
+        <View style={styles.pad}>
+          <HomeHeader onOpenSettings={() => router.push('/(tabs)/settings')} />
 
-        {/* Live Active Ride Synced Banner */}
-        {isRideActive && (
-          <TouchableOpacity
-            style={styles.activeRideBanner}
-            onPress={() => router.push('/active-ride')}
-            activeOpacity={0.85}
-          >
-            <View style={styles.activeRideTopRow}>
-              <View style={styles.liveIndicator}>
-                <View
-                  style={[
-                    styles.pulsingDot,
-                    {
-                      backgroundColor:
-                        liveTracking.status === 'paused'
-                          ? Colors.warning
-                          : Colors.primary,
-                    },
-                  ]}
-                />
-                <Text style={styles.liveStatusText}>
-                  {liveTracking.status === 'paused'
-                    ? 'RIDE PAUSED'
-                    : 'RECORDING LIVE'}
-                </Text>
-              </View>
-
-              <View style={styles.gpsSignalRow}>
-                <Radio
-                  size={12}
-                  color={
-                    liveTracking.gpsSignalState === 'good'
-                      ? Colors.primary
-                      : Colors.warning
-                  }
-                />
-                <Text style={styles.gpsSignalText}>
-                  {liveTracking.gpsSignalState === 'good' ? 'GPS LOCK' : 'SEARCHING'}
-                </Text>
-              </View>
-            </View>
-
-            <View style={styles.activeRideMetricsRow}>
-              <View style={styles.activeSpeedBlock}>
-                <Text style={styles.activeSpeedNumber}>
-                  {Math.max(0, Math.round(liveTracking.currentSpeedKmh))}
-                </Text>
-                <Text style={styles.activeSpeedUnit}>KM/H</Text>
-              </View>
-
-              <View style={styles.activeDivider} />
-
-              <View style={styles.activeStatBlock}>
-                <Text style={styles.activeStatLabel}>DISTANCE</Text>
-                <Text style={styles.activeStatValue}>
-                  {liveTracking.currentDistanceKm.toFixed(2)} km
-                </Text>
-              </View>
-
-              <View style={styles.activeDivider} />
-
-              <View style={styles.activeStatBlock}>
-                <Text style={styles.activeStatLabel}>DURATION</Text>
-                <Text style={styles.activeStatValue}>
-                  {formatDuration(liveTracking.currentDurationSeconds)}
-                </Text>
-              </View>
-            </View>
-
-            <View style={styles.activeRideFooter}>
-              <Text style={styles.activeRideFooterText}>
-                Tap to open motorcycle cockpit HUD
-              </Text>
-              <Navigation size={13} color={Colors.primary} />
-            </View>
-          </TouchableOpacity>
-        )}
-
-        {/* Hero Reading: THIS MONTH */}
-        <View style={styles.heroSection}>
-          <Text style={styles.heroLabel}>THIS MONTH</Text>
-          <View style={styles.heroValueRow}>
-            <Text style={styles.heroDistanceNumber}>
-              {stats.thisMonthKm.toFixed(1)}
-            </Text>
-            <Text style={styles.heroDistanceUnit}>KM</Text>
-          </View>
-          <Text style={styles.heroSubtext}>
-            {stats.totalRides > 0
-              ? `${stats.totalRides} completed ${stats.totalRides === 1 ? 'ride' : 'rides'}`
-              : 'Ready to log your first ride'}
-          </Text>
-        </View>
-
-        {/* 4-Cell Telemetry Grid */}
-        <View style={styles.telemetryGrid}>
-          <View style={styles.telemetryCell}>
-            <Text style={styles.telemetryCellLabel}>TOTAL DISTANCE</Text>
-            <Text style={styles.telemetryCellValue}>{stats.totalKm.toFixed(0)}</Text>
-            <Text style={styles.telemetryCellUnit}>KM</Text>
+          <View style={styles.telemetryBlock}>
+            <HeroTelemetry
+              totalKm={stats.totalDistanceKm}
+              thisMonthKm={stats.thisMonthDistanceKm}
+              loaded={loaded}
+            />
           </View>
 
-          <View style={styles.telemetryCell}>
-            <Text style={styles.telemetryCellLabel}>TOTAL RIDES</Text>
-            <Text style={styles.telemetryCellValue}>{stats.totalRides}</Text>
-            <Text style={styles.telemetryCellUnit}>LOGGED</Text>
-          </View>
+          <HomeStatsPanel
+            avgSpeedKmh={stats.overallAverageSpeedKmh}
+            rideTimeSeconds={stats.totalMovingTimeSeconds || stats.totalDurationSeconds}
+            totalRides={stats.totalRidesCount}
+            loaded={loaded}
+          />
 
-          <View style={styles.telemetryCell}>
-            <Text style={styles.telemetryCellLabel}>TOP SPEED</Text>
-            <Text style={styles.telemetryCellValue}>{Math.round(stats.topSpeedKmh)}</Text>
-            <Text style={styles.telemetryCellUnit}>KM/H</Text>
-          </View>
-
-          <View style={styles.telemetryCell}>
-            <Text style={styles.telemetryCellLabel}>AVG SPEED</Text>
-            <Text style={styles.telemetryCellValue}>{Math.round(stats.avgSpeedKmh)}</Text>
-            <Text style={styles.telemetryCellUnit}>KM/H</Text>
-          </View>
-        </View>
-
-        {/* Primary CTA: START RIDE or RETURN TO HUD */}
-        <View style={styles.ctaSection}>
-          {isRideActive ? (
-            <TouchableOpacity
-              style={styles.returnHudBtn}
-              onPress={() => router.push('/active-ride')}
-              activeOpacity={0.85}
-            >
-              <Navigation size={18} color="#0C0E12" />
-              <Text style={styles.returnHudBtnText}>VIEW ACTIVE RIDE HUD</Text>
-            </TouchableOpacity>
-          ) : (
-            <StartRideButton onPress={handleStartRide} loading={loading} />
-          )}
-        </View>
-
-        {/* Recent Rides Journal */}
-        <View style={styles.recentSection}>
-          <View style={styles.sectionHeaderRow}>
-            <Text style={styles.sectionTitle}>RECENT RIDES</Text>
-            {recentRides.length > 0 && (
-              <TouchableOpacity
-                onPress={() => router.push('/(tabs)/history')}
-                style={styles.viewAllBtn}
-                activeOpacity={0.7}
-              >
-                <Text style={styles.viewAllText}>VIEW ALL</Text>
-                <ChevronRight size={12} color={Colors.primary} />
-              </TouchableOpacity>
+          <View style={styles.cta}>
+            {!isRideActive && (
+              <DestinationStartFlow
+                mode={rideMode}
+                onModeChange={setRideMode}
+                selectedDestination={selectedDestination}
+                onSelectDestination={setSelectedDestination}
+                manualMinutes={manualMinutes}
+                onChangeManualMinutes={setManualMinutes}
+              />
             )}
+            <StartRideCTA onPress={handlePrimaryAction} loading={starting} activeLabel={activeLabel} />
           </View>
 
-          {recentRides.length > 0 ? (
-            recentRides.map((ride) => (
-              <RideCard
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionTitle} accessibilityRole="header">
+              Recent Rides
+            </Text>
+            {recentRides.length > 0 ? (
+              <Pressable
+                onPress={() => router.push('/(tabs)/history')}
+                accessibilityRole="button"
+                accessibilityLabel="View all rides"
+                hitSlop={10}
+                style={({ pressed }) => [styles.viewAll, pressed && { opacity: 0.5 }]}
+              >
+                <Text style={styles.viewAllText}>View all</Text>
+                <ChevronRight size={16} color={Colors.textSecondary} strokeWidth={1.8} />
+              </Pressable>
+            ) : null}
+          </View>
+
+          {!loaded ? (
+            <RecentRidesSkeleton />
+          ) : recentRides.length === 0 ? (
+            <RecentRidesEmpty />
+          ) : (
+            recentRides.map((ride, i) => (
+              <RecentRideRow
                 key={ride.id}
                 ride={ride}
+                coords={routes[ride.id] ?? []}
                 onPress={() => router.push(`/ride/${ride.id}`)}
+                showDivider={i < recentRides.length - 1}
               />
             ))
-          ) : (
-            <View style={styles.emptyContainer}>
-              <MotorcycleIllustration width={240} height={130} />
-              <Text style={styles.emptyTitle}>No Recorded Rides</Text>
-              <Text style={styles.emptySubtitle}>
-                Press Start Ride above to begin recording route telemetry and speed.
-              </Text>
-            </View>
           )}
+
+          <View style={styles.garage}>
+            <GarageShortcut bikeName={bikeName} onPress={() => router.push('/(tabs)/garage')} />
+          </View>
         </View>
       </ScrollView>
-    </SafeAreaView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  safeArea: {
+  screen: {
     flex: 1,
     backgroundColor: Colors.background,
   },
-  scrollView: {
+  scroll: {
     flex: 1,
   },
-  scrollContent: {
-    paddingHorizontal: 16,
-    paddingTop: 8,
-    paddingBottom: 28,
+  pad: {
+    paddingHorizontal: H_PAD,
   },
-  header: {
+  telemetryBlock: {
+    marginTop: 46,
+    marginBottom: 22,
+  },
+  cta: {
+    marginTop: 16,
+  },
+  sectionHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 16,
-  },
-  machineBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    backgroundColor: Colors.surface,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: Colors.surfaceBorder,
-    maxWidth: '52%',
-  },
-  machineBadgeText: {
-    color: Colors.text,
-    fontSize: 11,
-    fontWeight: '800',
-    letterSpacing: 0.5,
-    flexShrink: 1,
-  },
-  activeRideBanner: {
-    backgroundColor: Colors.surface,
-    borderRadius: 14,
-    padding: 14,
-    borderWidth: 1.5,
-    borderColor: Colors.primary,
-    marginBottom: 14,
-  },
-  activeRideTopRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 10,
-  },
-  liveIndicator: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  pulsingDot: {
-    width: 7,
-    height: 7,
-    borderRadius: 3.5,
-  },
-  liveStatusText: {
-    color: Colors.text,
-    fontSize: 10,
-    fontWeight: '900',
-    letterSpacing: 0.8,
-  },
-  gpsSignalRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    backgroundColor: Colors.surfaceSubtle,
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 6,
-  },
-  gpsSignalText: {
-    color: Colors.textMuted,
-    fontSize: 9,
-    fontWeight: '800',
-    letterSpacing: 0.5,
-  },
-  activeRideMetricsRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-around',
-    backgroundColor: Colors.backgroundElevated,
-    borderRadius: 10,
-    paddingVertical: 10,
-    paddingHorizontal: 8,
-    marginBottom: 10,
-  },
-  activeSpeedBlock: {
-    flexDirection: 'row',
-    alignItems: 'baseline',
-    gap: 4,
-  },
-  activeSpeedNumber: {
-    color: Colors.text,
-    fontSize: 28,
-    fontWeight: '900',
-    letterSpacing: -1,
-    fontVariant: ['tabular-nums'],
-  },
-  activeSpeedUnit: {
-    color: Colors.primary,
-    fontSize: 11,
-    fontWeight: '800',
-  },
-  activeDivider: {
-    width: 1,
-    height: 24,
-    backgroundColor: Colors.surfaceBorder,
-  },
-  activeStatBlock: {
-    alignItems: 'center',
-  },
-  activeStatLabel: {
-    color: Colors.textMuted,
-    fontSize: 8,
-    fontWeight: '800',
-    letterSpacing: 0.8,
-    marginBottom: 2,
-  },
-  activeStatValue: {
-    color: Colors.text,
-    fontSize: 13,
-    fontWeight: '800',
-    fontVariant: ['tabular-nums'],
-  },
-  activeRideFooter: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 6,
-  },
-  activeRideFooterText: {
-    color: Colors.primary,
-    fontSize: 11,
-    fontWeight: '700',
-    letterSpacing: 0.3,
-  },
-  heroSection: {
-    backgroundColor: Colors.surface,
-    borderRadius: 14,
-    paddingHorizontal: 18,
-    paddingVertical: 18,
-    borderWidth: 1,
-    borderColor: Colors.surfaceBorder,
-    marginBottom: 10,
-  },
-  heroLabel: {
-    color: Colors.textMuted,
-    fontSize: 10,
-    fontWeight: '800',
-    letterSpacing: 1.2,
+    marginTop: 22,
     marginBottom: 4,
   },
-  heroValueRow: {
-    flexDirection: 'row',
-    alignItems: 'baseline',
-    gap: 6,
-  },
-  heroDistanceNumber: {
-    color: Colors.text,
-    fontSize: 44,
-    fontWeight: '900',
-    letterSpacing: -1.5,
-    fontVariant: ['tabular-nums'],
-  },
-  heroDistanceUnit: {
-    color: Colors.primary,
-    fontSize: 16,
-    fontWeight: '800',
-    letterSpacing: 0.5,
-  },
-  heroSubtext: {
-    color: Colors.textSecondary,
-    fontSize: 12,
-    fontWeight: '600',
-    marginTop: 2,
-  },
-  telemetryGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-    justifyContent: 'space-between',
-    marginBottom: 16,
-  },
-  telemetryCell: {
-    width: '48.5%',
-    backgroundColor: Colors.surface,
-    borderRadius: 12,
-    paddingVertical: 12,
-    paddingHorizontal: 12,
-    borderWidth: 1,
-    borderColor: Colors.surfaceBorder,
-    alignItems: 'flex-start',
-  },
-  telemetryCellLabel: {
-    color: Colors.textMuted,
-    fontSize: 8,
-    fontWeight: '800',
-    letterSpacing: 0.8,
-    marginBottom: 3,
-  },
-  telemetryCellValue: {
-    color: Colors.text,
-    fontSize: 22,
-    fontWeight: '900',
-    fontVariant: ['tabular-nums'],
-    letterSpacing: -0.5,
-  },
-  telemetryCellUnit: {
-    color: Colors.primary,
-    fontSize: 9,
-    fontWeight: '800',
-    letterSpacing: 0.5,
-    marginTop: 1,
-  },
-  ctaSection: {
-    marginBottom: 20,
-  },
-  returnHudBtn: {
-    backgroundColor: Colors.primary,
-    height: 54,
-    borderRadius: 14,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-  },
-  returnHudBtnText: {
-    color: '#0C0E12',
-    fontSize: 15,
-    fontWeight: '900',
-    letterSpacing: 0.8,
-  },
-  recentSection: {
-    marginTop: 2,
-  },
-  sectionHeaderRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 10,
-  },
   sectionTitle: {
-    color: Colors.textMuted,
-    fontSize: 11,
-    fontWeight: '800',
-    letterSpacing: 1.2,
+    color: Colors.text,
+    fontSize: 19,
+    fontWeight: '600',
+    letterSpacing: -0.3,
   },
-  viewAllBtn: {
+  viewAll: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 2,
   },
   viewAllText: {
-    color: Colors.primary,
-    fontSize: 11,
-    fontWeight: '800',
-    letterSpacing: 0.5,
-  },
-  emptyContainer: {
-    backgroundColor: Colors.surface,
-    borderRadius: 14,
-    padding: 20,
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: Colors.surfaceBorder,
-  },
-  emptyTitle: {
-    color: Colors.text,
-    fontSize: 16,
-    fontWeight: '800',
-    marginTop: 12,
-    marginBottom: 4,
-  },
-  emptySubtitle: {
     color: Colors.textSecondary,
-    fontSize: 12,
-    textAlign: 'center',
-    lineHeight: 16,
+    fontSize: 13.5,
+    fontWeight: '500',
+  },
+  garage: {
+    marginTop: 14,
   },
 });

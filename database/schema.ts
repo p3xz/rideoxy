@@ -9,7 +9,14 @@ export const CREATE_RIDES_TABLE = `
     average_speed REAL NOT NULL DEFAULT 0.0,
     max_speed REAL NOT NULL DEFAULT 0.0,
     status TEXT NOT NULL DEFAULT 'running',
-    created_at INTEGER NOT NULL
+    created_at INTEGER NOT NULL,
+    ride_mode TEXT NOT NULL DEFAULT 'free',
+    destination_name TEXT,
+    destination_lat REAL,
+    destination_lng REAL,
+    estimated_duration_sec INTEGER,
+    estimated_distance_m INTEGER,
+    estimate_source TEXT
   );
 `;
 
@@ -54,6 +61,20 @@ export const CREATE_FUEL_LOGS_TABLE = `
   );
 `;
 
+export const CREATE_MOTORCYCLES_TABLE = `
+  CREATE TABLE IF NOT EXISTS motorcycles (
+    id TEXT PRIMARY KEY NOT NULL,
+    name TEXT NOT NULL,
+    category TEXT,
+    engine_cc INTEGER,
+    odometer_km REAL,
+    purchase_date TEXT,
+    photo_uri TEXT,
+    is_default INTEGER NOT NULL DEFAULT 0,
+    created_at INTEGER NOT NULL
+  );
+`;
+
 export const CREATE_INDEXES = `
   CREATE INDEX IF NOT EXISTS idx_track_points_ride_time ON track_points(ride_id, timestamp);
   CREATE INDEX IF NOT EXISTS idx_rides_status ON rides(status);
@@ -61,5 +82,6 @@ export const CREATE_INDEXES = `
   CREATE INDEX IF NOT EXISTS idx_fuel_logs_vehicle ON fuel_logs(vehicle_id);
   CREATE INDEX IF NOT EXISTS idx_fuel_logs_odometer ON fuel_logs(vehicle_id, odometer ASC);
   CREATE INDEX IF NOT EXISTS idx_fuel_logs_created_at ON fuel_logs(created_at DESC);
+  CREATE INDEX IF NOT EXISTS idx_motorcycles_default ON motorcycles(is_default DESC, created_at ASC);
 `;
 

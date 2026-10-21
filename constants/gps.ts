@@ -19,13 +19,17 @@ export const GPS_CONFIG = {
 
   // Distance limits (meters)
   // Distance below which movement is treated as stationary if point-to-point delta is negligible
-  MIN_STATIONARY_DISTANCE_METERS: 2.0,
+  MIN_STATIONARY_DISTANCE_METERS: 2.5,
   // Maximum plausible distance jump in 1 second for motorcycle (260 km/h = ~72 m/s)
   MAX_PLAUSIBLE_METERS_PER_SECOND: 75,
 
   // Hardware polling frequencies
   TRACKING_TIME_INTERVAL_MS: 1000, // 1 second
   TRACKING_DISTANCE_INTERVAL_METERS: 0, // 0 meters ensures continuous time-based updates even when stopping/slowing down
+
+  // Minimum interval between distinct GPS points to reject sub-second duplicate/burst callbacks (ms)
+  // Legitimate GNSS fixes arrive at <= 5 Hz (>= 200ms). Sub-200ms bursts from multiple listeners are rejected.
+  MIN_SAMPLE_INTERVAL_MS: 200,
 
   // UI Throttle: update map and HUD every 500ms minimum
   UI_THROTTLE_INTERVAL_MS: 500,

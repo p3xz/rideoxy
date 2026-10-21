@@ -31,39 +31,39 @@ export const RideCard: React.FC<RideCardProps> = ({
       style={styles.card}
       onPress={onPress}
       activeOpacity={0.7}
+      accessibilityRole="button"
+      accessibilityLabel={`Ride on ${dateFormatted}, distance ${distanceVal} ${distanceUnit}, duration ${formatDuration(ride.duration)}, average speed ${formatSpeed(ride.average_speed, unit)}`}
+      accessibilityHint="Double tap to open ride details"
     >
-      <View style={styles.cardHeader}>
-        <Text style={styles.dateText}>{dateFormatted.toUpperCase()}</Text>
-        <ChevronRight size={16} color={Colors.textMuted} />
+      <View style={styles.cardTopRow}>
+        <View style={styles.dateBadge}>
+          <Text style={styles.dateText} maxFontSizeMultiplier={1.3}>{dateFormatted.toUpperCase()}</Text>
+        </View>
+        <Text style={styles.durationText} maxFontSizeMultiplier={1.3}>{formatDuration(ride.duration)}</Text>
       </View>
 
-      <View style={styles.cardBody}>
-        {/* Large Instrument Distance */}
+      <View style={styles.cardMainRow}>
+        {/* Left: Prominent Distance */}
         <View style={styles.distanceBlock}>
-          <Text style={styles.distanceValue}>{distanceVal}</Text>
-          <Text style={styles.distanceUnit}>{distanceUnit.toUpperCase()}</Text>
+          <Text style={styles.distanceValue} maxFontSizeMultiplier={1.3}>{distanceVal}</Text>
+          <Text style={styles.distanceUnit} maxFontSizeMultiplier={1.3}>{distanceUnit.toUpperCase()}</Text>
         </View>
 
-        {/* Telemetry Metrics */}
+        {/* Right: Telemetry Metrics & Chevron */}
         <View style={styles.metaRow}>
-          <View style={styles.metaCol}>
-            <Text style={styles.metaLabel}>TIME</Text>
-            <Text style={styles.metaValue}>{formatDuration(ride.duration)}</Text>
+          <View style={styles.telemetryPill}>
+            <Text style={styles.metaLabel} maxFontSizeMultiplier={1.3}>AVG</Text>
+            <Text style={styles.metaValue} maxFontSizeMultiplier={1.3}>{formatSpeed(ride.average_speed, unit)}</Text>
           </View>
 
-          <View style={styles.metaDivider} />
+          <View style={styles.divider} />
 
-          <View style={styles.metaCol}>
-            <Text style={styles.metaLabel}>AVG</Text>
-            <Text style={styles.metaValue}>{formatSpeed(ride.average_speed, unit)}</Text>
+          <View style={styles.telemetryPill}>
+            <Text style={styles.metaLabel} maxFontSizeMultiplier={1.3}>MAX</Text>
+            <Text style={styles.metaValue} maxFontSizeMultiplier={1.3}>{formatSpeed(ride.max_speed, unit)}</Text>
           </View>
 
-          <View style={styles.metaDivider} />
-
-          <View style={styles.metaCol}>
-            <Text style={styles.metaLabel}>MAX</Text>
-            <Text style={styles.metaValue}>{formatSpeed(ride.max_speed, unit)}</Text>
-          </View>
+          <ChevronRight size={16} color={Colors.textMuted} style={styles.chevron} />
         </View>
       </View>
     </TouchableOpacity>
@@ -78,24 +78,36 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     borderWidth: 1,
     borderColor: Colors.surfaceBorder,
-    marginBottom: 10,
+    marginBottom: 8,
   },
-  cardHeader: {
+  cardTopRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     marginBottom: 8,
   },
+  dateBadge: {
+    backgroundColor: Colors.surfaceSubtle,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+  },
   dateText: {
     color: Colors.textMuted,
-    fontSize: 11,
+    fontSize: 10,
     fontWeight: '800',
-    letterSpacing: 1,
+    letterSpacing: 0.8,
   },
-  cardBody: {
+  durationText: {
+    color: Colors.textSecondary,
+    fontSize: 11,
+    fontWeight: '700',
+    fontVariant: ['tabular-nums'],
+  },
+  cardMainRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'flex-end',
+    alignItems: 'center',
   },
   distanceBlock: {
     flexDirection: 'row',
@@ -104,41 +116,45 @@ const styles = StyleSheet.create({
   },
   distanceValue: {
     color: Colors.text,
-    fontSize: 28,
+    fontSize: 26,
     fontWeight: '900',
     letterSpacing: -0.5,
     fontVariant: ['tabular-nums'],
   },
   distanceUnit: {
-    color: Colors.primary,
+    color: Colors.textSecondary,
     fontSize: 12,
-    fontWeight: '800',
-    letterSpacing: 0.5,
+    fontWeight: '700',
+    letterSpacing: 0.3,
+    textTransform: 'lowercase',
   },
   metaRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
   },
-  metaCol: {
+  telemetryPill: {
     alignItems: 'flex-end',
   },
   metaLabel: {
     color: Colors.textMuted,
     fontSize: 8,
-    fontWeight: '800',
+    fontWeight: '700',
     letterSpacing: 0.8,
     marginBottom: 2,
   },
   metaValue: {
     color: Colors.textSecondary,
     fontSize: 12,
-    fontWeight: '700',
+    fontWeight: '600',
     fontVariant: ['tabular-nums'],
   },
-  metaDivider: {
+  divider: {
     width: 1,
-    height: 18,
+    height: 20,
     backgroundColor: Colors.surfaceBorder,
+  },
+  chevron: {
+    marginLeft: 4,
   },
 });

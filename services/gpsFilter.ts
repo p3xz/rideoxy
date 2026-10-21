@@ -15,18 +15,21 @@ export interface GPSValidationResult {
 }
 
 /**
- * Contextual GPS filter that preserves legitimate route points while rejecting
- * impossible jumps, invalid coords, duplicate points, extreme spikes, and stale mock/hardware caches.
+ * Contextual GPS filter that preserves legitimate route points while strongly suppressing
+ * stationary GPS drift, impossible jumps, invalid coords, duplicate points, extreme spikes,
+ * and stale mock/hardware caches. GPS noise cannot be eliminated entirely by software;
+ * this filter strongly suppresses stationary GPS drift and rejects the most common artifacts.
  *
  * CRITICAL DESIGN INVARIANT:
  * All returned metrics (segmentSpeedKmh, segmentDistanceMeters, segmentTimeSeconds) are derived
  * from a SINGLE source of truth: the Haversine coordinate distance divided by the GPS timestamp delta.
- * This guarantees that avg(speed) <= max(speed) mathematically, because average speed is the
+ * This ensures avg(speed) <= max(speed) mathematically, because average speed is the
  * time-weighted mean of individual segment speeds.
  */
 export function validateGPSPoint(
   current: RawGPSPoint,
-  previous: RawGPSPoint | null
+  previous: RawGPSPoint | null,
+  stationaryAnchor?: RawGPSPoint | null
 ): GPSValidationResult {
   // 1. Basic Coordinate Sanity Check
   if (
@@ -60,6 +63,12 @@ export function validateGPSPoint(
     return { isValid: false, reason: `Accuracy too poor (${Math.round(current.accuracy)}m)` };
   }
 
+  // 3. Stale Hardware Cache Check (wall-clock comparison)
+  const now = Date.now();
+  if (current.timestamp && now - current.timestamp > GPS_CONFIG.GPS_MAX_FIX_AGE_MS) {
+    return { isValid: false, reason: `Stale GPS fix (${Math.round((now - current.timestamp) / 1000)}s old)` };
+  }
+
   // First point of a ride: accept position, zero movement
   if (!previous) {
     return {
@@ -71,10 +80,14 @@ export function validateGPSPoint(
     };
   }
 
-  // 3. Time Delta Check
+  // 4. Timestamp Validation (reject duplicate timestamps and rapid bursts)
   const timeDeltaMs = current.timestamp - previous.timestamp;
   if (timeDeltaMs <= 0) {
     return { isValid: false, reason: 'Duplicate or backward timestamp' };
+  }
+
+  if (timeDeltaMs < GPS_CONFIG.MIN_SAMPLE_INTERVAL_MS) {
+    return { isValid: false, reason: `Rapid duplicate/burst sample (< ${GPS_CONFIG.MIN_SAMPLE_INTERVAL_MS}ms)` };
   }
 
   const timeDeltaSeconds = timeDeltaMs / 1000;
@@ -83,7 +96,7 @@ export function validateGPSPoint(
     { latitude: current.latitude, longitude: current.longitude }
   );
 
-  // 4. Point-to-Point Velocity Check (single authoritative speed)
+  // 5. Point-to-Point Velocity Check (single authoritative speed)
   const segmentSpeedMs = distanceMeters / timeDeltaSeconds;
   const segmentSpeedKmh = segmentSpeedMs * 3.6;
 
@@ -97,10 +110,27 @@ export function validateGPSPoint(
     };
   }
 
-  // 5. Stationary Jitter / Stopped Vehicle
-  // If the coordinate displacement is negligible AND the derived speed is below moving threshold,
-  // classify as stationary. Distance, speed, and moving time are all zero for this segment.
-  if (distanceMeters < GPS_CONFIG.MIN_STATIONARY_DISTANCE_METERS && segmentSpeedMs < GPS_CONFIG.MIN_MOVING_SPEED_MS) {
+  // 6. Contextual Physics & Stationary Detection (Accuracy + Doppler Speed + Stationary Anchor)
+  const osSpeedMs =
+    current.speed !== null && current.speed !== undefined && current.speed >= 0
+      ? current.speed
+      : null;
+
+  const currentAcc = current.accuracy ?? 15;
+  const prevAcc = previous.accuracy ?? 15;
+  const effectiveAccuracy = Math.max(currentAcc, prevAcc);
+
+  // Measure displacement from stationary anchor if device is currently anchored
+  const anchorDisplacementMeters = stationaryAnchor
+    ? calculateDistanceMeters(
+        { latitude: stationaryAnchor.latitude, longitude: stationaryAnchor.longitude },
+        { latitude: current.latitude, longitude: current.longitude }
+      )
+    : distanceMeters;
+
+  // A. Anchored Stationary Jitter: If anchored and displacement from anchor is within stationary radius,
+  // hold device stationary. Incoming noise cannot drift the reference point.
+  if (stationaryAnchor && anchorDisplacementMeters < GPS_CONFIG.MIN_STATIONARY_DISTANCE_METERS) {
     return {
       isValid: true,
       isStationaryJitter: true,
@@ -110,12 +140,42 @@ export function validateGPSPoint(
     };
   }
 
-  // 6. Contextual Accuracy & Velocity Continuity during poor GPS
+  // B. Stationary Jitter via Accuracy Bubble & OS Speed:
+  // If displacement from anchor is smaller than the GPS accuracy bubble AND OS Doppler speed indicates stationary/stopped
+  if (
+    osSpeedMs !== null &&
+    osSpeedMs < GPS_CONFIG.MIN_MOVING_SPEED_MS &&
+    anchorDisplacementMeters < Math.min(effectiveAccuracy, 6.0)
+  ) {
+    return {
+      isValid: true,
+      isStationaryJitter: true,
+      segmentSpeedKmh: 0,
+      segmentDistanceMeters: 0,
+      segmentTimeSeconds: timeDeltaSeconds,
+    };
+  }
+
+  // C. Consecutive step stationary: negligible point-to-point delta with sub-moving speed
+  if (
+    distanceMeters < GPS_CONFIG.MIN_STATIONARY_DISTANCE_METERS &&
+    (segmentSpeedMs < GPS_CONFIG.MIN_MOVING_SPEED_MS || (osSpeedMs !== null && osSpeedMs < GPS_CONFIG.MIN_MOVING_SPEED_MS))
+  ) {
+    return {
+      isValid: true,
+      isStationaryJitter: true,
+      segmentSpeedKmh: 0,
+      segmentDistanceMeters: 0,
+      segmentTimeSeconds: timeDeltaSeconds,
+    };
+  }
+
+  // 7. Contextual Accuracy & Velocity Continuity during poor GPS
   if (
     current.accuracy !== null &&
     current.accuracy > GPS_CONFIG.BASE_ACCURACY_THRESHOLD_METERS
   ) {
-    const reportedSpeedKmh = (current.speed ?? 0) * 3.6;
+    const reportedSpeedKmh = (osSpeedMs ?? 0) * 3.6;
     const speedDifference = Math.abs(segmentSpeedKmh - reportedSpeedKmh);
 
     // If there is a massive discrepancy during poor accuracy, reject
@@ -129,15 +189,10 @@ export function validateGPSPoint(
     }
   }
 
-  // 7. Cross-check: if hardware reports 0 speed but coordinates show large movement,
-  // use the coordinate-derived speed (hardware speed can be stale in simulators).
-  // If hardware reports high speed but coordinates show no movement, trust coordinates (speed = ~0).
-  // In all cases the COORDINATE-DERIVED speed is authoritative.
-
-  // Final speed is the coordinate-derived segment speed, capped to plausible range
+  // 8. Authoritative Coordinate-Derived Speed for Accepted Movement
   const finalSpeedKmh = Math.min(segmentSpeedKmh, GPS_CONFIG.MAX_PLAUSIBLE_SPEED_KMH);
 
-  // If final speed is below moving threshold but distance is also tiny, mark stationary
+  // If final speed is below moving threshold and distance is tiny, mark stationary
   if (finalSpeedKmh < GPS_CONFIG.MIN_MOVING_SPEED_KMH && distanceMeters < GPS_CONFIG.MIN_STATIONARY_DISTANCE_METERS) {
     return {
       isValid: true,

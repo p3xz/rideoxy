@@ -7,23 +7,61 @@
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "dark",
+    "splash": {
+      "backgroundColor": "#070B0A",
+      "resizeMode": "contain"
+    },
     "ios": {
-      "supportsTablet": true,
+      "supportsTablet": false,
       "bundleIdentifier": "com.rideoxy.app",
+      "buildNumber": "1",
       "infoPlist": {
         "UIBackgroundModes": [
           "location"
         ],
-        "NSLocationWhenInUseUsageDescription": "Rideoxy uses your location to record motorcycle ride routes, speed, and distance.",
-        "NSLocationAlwaysAndWhenInUseUsageDescription": "Rideoxy uses background location while an active ride is recording so your route continues when your phone is locked or mounted.",
-        "NSLocationAlwaysUsageDescription": "Rideoxy uses your location in the background only while a ride is actively recording.",
+        "NSLocationWhenInUseUsageDescription": "Rideoxy uses your location to record your route, speed and distance during a ride. Your data never leaves your phone.",
+        "NSLocationAlwaysAndWhenInUseUsageDescription": "Allow Always so Rideoxy can keep recording your ride when the screen is locked or you switch apps. Your data stays on your phone.",
+        "NSCameraUsageDescription": "Used only to add a photo of your motorcycle. Photos stay on your phone.",
+        "NSPhotoLibraryUsageDescription": "Used only to add a photo of your motorcycle. Photos stay on your phone.",
         "ITSAppUsesNonExemptEncryption": false
+      },
+      "privacyManifests": {
+        "NSPrivacyTracking": false,
+        "NSPrivacyTrackingDomains": [],
+        "NSPrivacyCollectedDataTypes": [],
+        "NSPrivacyAccessedAPITypes": [
+          {
+            "NSPrivacyAccessedAPIType": "NSPrivacyAccessedAPITypeFileTimestamp",
+            "NSPrivacyAccessedAPITypeReasons": [
+              "C617.1",
+              "0A2A.1"
+            ]
+          },
+          {
+            "NSPrivacyAccessedAPIType": "NSPrivacyAccessedAPITypeUserDefaults",
+            "NSPrivacyAccessedAPITypeReasons": [
+              "CA92.1"
+            ]
+          },
+          {
+            "NSPrivacyAccessedAPIType": "NSPrivacyAccessedAPITypeDiskSpace",
+            "NSPrivacyAccessedAPITypeReasons": [
+              "85F4.1"
+            ]
+          },
+          {
+            "NSPrivacyAccessedAPIType": "NSPrivacyAccessedAPITypeSystemBootTime",
+            "NSPrivacyAccessedAPITypeReasons": [
+              "35F9.1"
+            ]
+          }
+        ]
       }
     },
     "android": {
       "package": "com.rideoxy.app",
       "adaptiveIcon": {
-        "backgroundColor": "#090C0E",
+        "backgroundColor": "#080A0E",
         "foregroundImage": "./assets/android-icon-foreground.png",
         "backgroundImage": "./assets/android-icon-background.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
@@ -50,24 +88,40 @@
     "plugins": [
       "expo-router",
       "expo-sqlite",
+      "expo-task-manager",
       [
         "expo-location",
         {
-          "locationAlwaysAndWhenInUsePermission": "Rideoxy uses background location while an active ride is recording so your route continues when your phone is locked or mounted.",
+          "locationAlwaysAndWhenInUsePermission": "Allow Always so Rideoxy can keep recording your ride when the screen is locked or you switch apps. Your data stays on your phone.",
+          "locationWhenInUsePermission": "Rideoxy uses your location to record your route, speed and distance during a ride. Your data never leaves your phone.",
+          "isIosBackgroundLocationEnabled": true,
           "isAndroidBackgroundLocationEnabled": true,
           "isAndroidForegroundServiceEnabled": true
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Used only to add a photo of your motorcycle. Photos stay on your phone.",
+          "cameraPermission": "Used only to add a photo of your motorcycle. Photos stay on your phone."
         }
       ],
       "@maplibre/maplibre-react-native",
       [
         "expo-splash-screen",
         {
-          "backgroundColor": "#090C0E",
-          "image": "./assets/splash-icon.png",
-          "imageWidth": 200,
-          "resizeMode": "contain"
+          "backgroundColor": "#070B0A"
         }
-      ]
+      ],
+      [
+        "expo-build-properties",
+        {
+          "ios": {
+            "deploymentTarget": "15.1"
+          }
+        }
+      ],
+      "expo-localization"
     ],
     "extra": {
       "router": {},

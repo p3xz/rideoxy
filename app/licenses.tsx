@@ -20,10 +20,10 @@ const LICENSES = [
     description: 'Free public vector tile hosting and map style provider (Liberty & Bright styles).',
   },
   {
-    name: 'OpenStreetMap',
+    name: 'OpenStreetMap (Nominatim & OSRM)',
     license: 'Open Database License (ODbL) 1.0',
     url: 'https://www.openstreetmap.org/copyright',
-    description: 'Open-source geospatial map data contributed by the OpenStreetMap community. © OpenStreetMap contributors.',
+    description: 'Map and routing data by OpenStreetMap contributors. Geocoding powered by Nominatim; routing powered by OSRM. © OpenStreetMap contributors.',
   },
   {
     name: 'Expo & React Native',

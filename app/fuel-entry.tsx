@@ -11,7 +11,8 @@ import {
   Alert,
   Switch,
 } from 'react-native';
-import { useRouter, useLocalSearchParams } from 'expo-router';
+import { useRouter, useLocalSearchParams, useNavigation } from 'expo-router';
+import { hapticFeedback } from '../services/haptics';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Colors } from '../constants/theme';
 import {
@@ -82,6 +83,43 @@ export default function FuelEntryScreen() {
   } | null>(null);
 
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
+  const navigation = useNavigation();
+  const isSavedRef = React.useRef(false);
+
+  const hasUnsavedChanges = Boolean(
+    odometerInput.trim() ||
+    litresInput.trim() ||
+    amountInput.trim() ||
+    rateInput.trim() ||
+    noteInput.trim()
+  );
+
+  useEffect(() => {
+    const unsubscribe = navigation.addListener('beforeRemove', (e) => {
+      if (!hasUnsavedChanges || isSubmitting || isSavedRef.current) {
+        return;
+      }
+      e.preventDefault();
+      hapticFeedback.warning();
+      Alert.alert(
+        'Discard changes?',
+        'You have unsaved fuel entry data. Are you sure you want to discard it?',
+        [
+          { text: 'Keep Editing', style: 'cancel' },
+          {
+            text: 'Discard',
+            style: 'destructive',
+            onPress: () => {
+              isSavedRef.current = true;
+              navigation.dispatch(e.data.action);
+            },
+          },
+        ]
+      );
+    });
+
+    return unsubscribe;
+  }, [navigation, hasUnsavedChanges, isSubmitting]);
 
   useEffect(() => {
     async function initForm() {
@@ -138,7 +176,7 @@ export default function FuelEntryScreen() {
           }
         }
       } catch (err) {
-        console.error('[rideoxy] Error initializing fuel form:', err);
+        console.error('[Rideoxy] Error initializing fuel form:', err);
       }
     }
 
@@ -340,9 +378,11 @@ export default function FuelEntryScreen() {
       }
 
       await setFuelPreferences({ defaultFuelType: fuelType });
+      isSavedRef.current = true;
+      hapticFeedback.success();
       router.back();
     } catch (err) {
-      console.error('[rideoxy] Error saving fuel log:', err);
+      console.error('[Rideoxy] Error saving fuel log:', err);
       Alert.alert('Error', 'Failed to save fuel log record.');
     } finally {
       setIsSubmitting(false);

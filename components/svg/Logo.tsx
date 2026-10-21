@@ -9,20 +9,20 @@ interface LogoProps {
 }
 
 export const Logo: React.FC<LogoProps> = ({
-  size = 40,
-  color = '#F3F4F6',
+  size = 36,
+  color = Colors.text,
   accentColor = Colors.primary,
 }) => {
   return (
     <Svg width={size} height={size} viewBox="0 0 100 100" fill="none">
       <Defs>
         <LinearGradient id="shieldGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-          <Stop offset="0%" stopColor="#232B3B" />
-          <Stop offset="100%" stopColor="#13171F" />
+          <Stop offset="0%" stopColor="#181E1D" />
+          <Stop offset="100%" stopColor="#111515" />
         </LinearGradient>
         <LinearGradient id="accentGlow" x1="0%" y1="0%" x2="100%" y2="100%">
           <Stop offset="0%" stopColor={accentColor} />
-          <Stop offset="100%" stopColor="#A85A18" />
+          <Stop offset="100%" stopColor="#2B8F89" />
         </LinearGradient>
       </Defs>
 
@@ -30,15 +30,15 @@ export const Logo: React.FC<LogoProps> = ({
       <Path
         d="M50 8 L88 28 L88 68 L50 92 L12 68 L12 28 Z"
         fill="url(#shieldGrad)"
-        stroke="#2C3545"
+        stroke={Colors.surfaceBorder}
         strokeWidth="2.5"
       />
 
       {/* Road / Speed Perspective Lines */}
       <Path
         d="M32 76 L46 36 L54 36 L68 76 Z"
-        fill="#141822"
-        stroke="#2C3545"
+        fill="#080A0A"
+        stroke={Colors.surfaceBorder}
         strokeWidth="1.5"
       />
 

@@ -12,6 +12,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Colors } from '../constants/theme';
 import { RideMap } from '../components/RideMap';
 import { RideStats } from '../components/RideStats';
+import { RoutePaceSummary } from '../components/RoutePaceSummary';
 import { trackingService } from '../services/tracking';
 import { deleteRide } from '../database/rideRepository';
 import { getTrackPointsByRideId } from '../database/trackPointRepository';
@@ -104,6 +105,21 @@ export default function RideSummaryScreen() {
           />
         </View>
 
+        {/* Route Pace Summary (Destination Mode Only) */}
+        {completedRide.ride_mode === 'destination' && (
+          <RoutePaceSummary
+            ride={completedRide}
+            lastPoint={
+              routeCoords.length > 0
+                ? {
+                    latitude: routeCoords[routeCoords.length - 1][1],
+                    longitude: routeCoords[routeCoords.length - 1][0],
+                  }
+                : null
+            }
+          />
+        )}
+
         {/* Detailed Stats */}
         <View style={styles.statsContainer}>
           <RideStats
@@ -171,7 +187,7 @@ const styles = StyleSheet.create({
     letterSpacing: -0.5,
   },
   mapCard: {
-    borderRadius: 14,
+    borderRadius: 12,
     overflow: 'hidden',
     borderWidth: 1,
     borderColor: Colors.surfaceBorder,

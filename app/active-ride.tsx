@@ -13,8 +13,10 @@ import { Colors } from '../constants/theme';
 import { RideMap } from '../components/RideMap';
 import { SpeedDisplay } from '../components/SpeedDisplay';
 import { RideStats } from '../components/RideStats';
+import { GlassSurface } from '../components/GlassSurface';
 import { trackingService } from '../services/tracking';
 import { LiveTrackingState } from '../types/tracking';
+import { hapticFeedback } from '../services/haptics';
 import {
   ChevronLeft,
   Pause,
@@ -51,6 +53,7 @@ export default function ActiveRideScreen() {
   }, []);
 
   const handleBackPress = () => {
+    hapticFeedback.light();
     if (trackingState.status === 'running' || trackingState.status === 'paused') {
       Alert.alert(
         'Ride in Progress',
@@ -69,6 +72,7 @@ export default function ActiveRideScreen() {
   };
 
   const handleTogglePause = async () => {
+    hapticFeedback.medium();
     if (trackingState.status === 'running') {
       await trackingService.pauseRide();
     } else if (trackingState.status === 'paused') {
@@ -77,6 +81,7 @@ export default function ActiveRideScreen() {
   };
 
   const handleEndRide = () => {
+    hapticFeedback.warning();
     Alert.alert(
       'End Ride Session',
       'Are you sure you want to finish this motorcycle ride and save telemetry to your journal?',
@@ -86,6 +91,7 @@ export default function ActiveRideScreen() {
           text: 'End & Save',
           style: 'destructive',
           onPress: async () => {
+            hapticFeedback.heavy();
             const finishedRide = await trackingService.endRide();
             if (finishedRide) {
               router.replace('/ride-summary');
@@ -158,57 +164,68 @@ export default function ActiveRideScreen() {
       </View>
 
       {/* Live Telemetry Panel */}
-      <View style={styles.telemetryPanel}>
-        {/* Speed Instrument Readout */}
-        <View style={styles.speedSection}>
-          <SpeedDisplay speed={trackingState.currentSpeedKmh} size="large" />
-        </View>
+      <GlassSurface
+        variant="modal"
+        intensity={45}
+        borderRadius={20}
+        style={styles.telemetryPanel}
+      >
+        <View style={styles.telemetryInner}>
+          {/* Speed Instrument Readout */}
+          <View style={styles.speedSection}>
+            <SpeedDisplay speed={trackingState.currentSpeedKmh} size="large" />
+          </View>
 
-        {/* Telemetry Stats Grid */}
-        <View style={styles.statsSection}>
-          <RideStats
-            distanceKm={trackingState.currentDistanceKm}
-            durationSeconds={trackingState.currentDurationSeconds}
-            avgSpeedKmh={trackingState.currentAvgSpeedKmh}
-            maxSpeedKmh={trackingState.currentMaxSpeedKmh}
-            mode="active"
-          />
-        </View>
+          {/* Telemetry Stats Grid */}
+          <View style={styles.statsSection}>
+            <RideStats
+              distanceKm={trackingState.currentDistanceKm}
+              durationSeconds={trackingState.currentDurationSeconds}
+              avgSpeedKmh={trackingState.currentAvgSpeedKmh}
+              maxSpeedKmh={trackingState.currentMaxSpeedKmh}
+              mode="active"
+            />
+          </View>
 
-        {/* Tactile Control Buttons */}
-        <View style={styles.controlsRow}>
-          <TouchableOpacity
-            style={[
-              styles.controlBtn,
-              styles.pauseBtn,
-              isPaused && styles.resumeBtnActive,
-            ]}
-            onPress={handleTogglePause}
-            activeOpacity={0.85}
-          >
-            {isPaused ? (
-              <>
-                <Play size={18} color="#0C0E12" fill="#0C0E12" />
-                <Text style={styles.resumeText}>RESUME</Text>
-              </>
-            ) : (
-              <>
-                <Pause size={18} color={Colors.text} />
-                <Text style={styles.pauseText}>PAUSE</Text>
-              </>
-            )}
-          </TouchableOpacity>
+          {/* Tactile Control Buttons */}
+          <View style={styles.controlsRow}>
+            <TouchableOpacity
+              style={[
+                styles.controlBtn,
+                styles.pauseBtn,
+                isPaused && styles.resumeBtnActive,
+              ]}
+              onPress={handleTogglePause}
+              activeOpacity={0.85}
+              accessibilityRole="button"
+              accessibilityLabel={isPaused ? "Resume motorcycle ride" : "Pause motorcycle ride"}
+            >
+              {isPaused ? (
+                <>
+                  <Play size={18} color="#070909" fill="#070909" />
+                  <Text style={styles.resumeText}>RESUME</Text>
+                </>
+              ) : (
+                <>
+                  <Pause size={18} color={Colors.text} />
+                  <Text style={styles.pauseText}>PAUSE</Text>
+                </>
+              )}
+            </TouchableOpacity>
 
-          <TouchableOpacity
-            style={[styles.controlBtn, styles.endBtn]}
-            onPress={handleEndRide}
-            activeOpacity={0.85}
-          >
-            <Square size={16} color="#FFFFFF" fill="#FFFFFF" />
-            <Text style={styles.endText}>END RIDE</Text>
-          </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.controlBtn, styles.endBtn]}
+              onPress={handleEndRide}
+              activeOpacity={0.85}
+              accessibilityRole="button"
+              accessibilityLabel="Finish and save motorcycle ride"
+            >
+              <Square size={16} color="#FFFFFF" fill="#FFFFFF" />
+              <Text style={styles.endText}>END RIDE</Text>
+            </TouchableOpacity>
+          </View>
         </View>
-      </View>
+      </GlassSurface>
     </SafeAreaView>
   );
 }
@@ -283,14 +300,18 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.surface,
   },
   telemetryPanel: {
-    backgroundColor: Colors.backgroundElevated,
-    borderTopLeftRadius: 18,
-    borderTopRightRadius: 18,
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    borderBottomLeftRadius: 0,
+    borderBottomRightRadius: 0,
+    borderLeftWidth: 0,
+    borderRightWidth: 0,
+    borderBottomWidth: 0,
+  },
+  telemetryInner: {
     paddingHorizontal: 16,
     paddingTop: 14,
-    paddingBottom: 14,
-    borderTopWidth: 1,
-    borderTopColor: Colors.surfaceBorder,
+    paddingBottom: 16,
     gap: 12,
   },
   speedSection: {

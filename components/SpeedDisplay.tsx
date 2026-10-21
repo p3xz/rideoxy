@@ -28,7 +28,9 @@ export const SpeedDisplay: React.FC<SpeedDisplayProps> = ({
         >
           {displaySpeed}
         </Text>
-        <Text style={styles.unitText}>{unit}</Text>
+        <View style={styles.unitBadge}>
+          <Text style={styles.unitText}>{unit}</Text>
+        </View>
       </View>
       {label ? <Text style={styles.labelText}>{label}</Text> : null}
     </View>
@@ -43,34 +45,37 @@ const styles = StyleSheet.create({
   speedRow: {
     flexDirection: 'row',
     alignItems: 'baseline',
-    gap: 6,
+    gap: 8,
   },
   speedNumber: {
     color: Colors.text,
     fontWeight: '900',
     fontVariant: ['tabular-nums'],
-    letterSpacing: -1.5,
+    letterSpacing: -2,
   },
   speedLarge: {
-    fontSize: 72,
-    lineHeight: 78,
+    fontSize: 88,
+    lineHeight: 92,
   },
   speedNormal: {
-    fontSize: 44,
-    lineHeight: 50,
+    fontSize: 48,
+    lineHeight: 52,
+  },
+  unitBadge: {
+    paddingBottom: 6,
   },
   unitText: {
-    color: Colors.primary,
-    fontSize: 16,
-    fontWeight: '800',
-    textTransform: 'uppercase',
+    color: Colors.textSecondary,
+    fontSize: 15,
+    fontWeight: '700',
+    textTransform: 'lowercase',
     letterSpacing: 0.5,
   },
   labelText: {
     color: Colors.textMuted,
     fontSize: 10,
     fontWeight: '800',
-    letterSpacing: 1.5,
+    letterSpacing: 2,
     marginTop: -2,
     textTransform: 'uppercase',
   },

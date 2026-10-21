@@ -65,14 +65,22 @@ export const RideMap: React.FC<RideMapProps> = ({
   const startCoordinate = coordinates.length > 0 ? coordinates[0] : null;
   const endCoordinate = coordinates.length > 1 ? coordinates[coordinates.length - 1] : null;
 
+  const lastCameraCenter = useRef<[number, number] | null>(null);
+
   useEffect(() => {
     if (cameraRef.current && mapReady) {
       if (followUser && currentLocation) {
-        cameraRef.current.easeTo({
-          center: [currentLocation.longitude, currentLocation.latitude],
-          zoom: zoomLevel,
-          duration: 1000,
-        });
+        const curCenter: [number, number] = [currentLocation.longitude, currentLocation.latitude];
+        const prev = lastCameraCenter.current;
+        // Only ease camera when position has physically shifted (> ~2m) or on initial render
+        if (!prev || Math.abs(prev[0] - curCenter[0]) > 0.00002 || Math.abs(prev[1] - curCenter[1]) > 0.00002) {
+          lastCameraCenter.current = curCenter;
+          cameraRef.current.easeTo({
+            center: curCenter,
+            zoom: zoomLevel,
+            duration: 1000,
+          });
+        }
       } else if (coordinates.length >= 2 && !interactive) {
         const longitudes = coordinates.map((c) => c[0]);
         const latitudes = coordinates.map((c) => c[1]);
@@ -90,7 +98,7 @@ export const RideMap: React.FC<RideMapProps> = ({
         );
       }
     }
-  }, [currentLocation, coordinates.length, mapReady, followUser]);
+  }, [currentLocation, coordinates.length, mapReady, followUser, zoomLevel, interactive]);
 
   return (
     <View style={[styles.container, { height: height as any }]}>

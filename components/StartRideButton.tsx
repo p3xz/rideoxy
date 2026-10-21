@@ -2,6 +2,7 @@ import React from 'react';
 import { StyleSheet, TouchableOpacity, Text, View } from 'react-native';
 import { Colors } from '../constants/theme';
 import { Play } from 'lucide-react-native';
+import { hapticFeedback } from '../services/haptics';
 
 interface StartRideButtonProps {
   onPress: () => void;
@@ -14,16 +15,23 @@ export const StartRideButton: React.FC<StartRideButtonProps> = ({
   disabled = false,
   loading = false,
 }) => {
+  const handlePress = () => {
+    hapticFeedback.heavy();
+    onPress();
+  };
+
   return (
     <TouchableOpacity
       style={[styles.button, (disabled || loading) && styles.disabled]}
-      onPress={onPress}
+      onPress={handlePress}
       disabled={disabled || loading}
       activeOpacity={0.85}
+      accessibilityRole="button"
+      accessibilityLabel={loading ? "Initializing GPS" : "Start motorcycle ride recording"}
     >
       <View style={styles.content}>
         <View style={styles.iconCircle}>
-          <Play size={18} color="#0C0E12" fill="#0C0E12" />
+          <Play size={18} color="#070909" fill="#070909" />
         </View>
         <Text style={styles.buttonText}>
           {loading ? 'INITIALIZING GPS...' : 'START RIDE'}

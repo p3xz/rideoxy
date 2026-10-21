@@ -1,394 +1,448 @@
 import React, { useState } from 'react';
-import {
-  StyleSheet,
-  View,
-  Text,
-  ScrollView,
-  TouchableOpacity,
-  Alert,
-  Switch,
-  Linking,
-} from 'react-native';
+import { StyleSheet, View, Text, ScrollView, Alert, Linking } from 'react-native';
 import { useRouter } from 'expo-router';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { Colors } from '../../constants/theme';
-import { deleteAllRides } from '../../database/rideRepository';
-import { Wordmark } from '../../components/svg/Wordmark';
-import { InstagramIcon } from '../../components/svg/InstagramIcon';
-import { MAP_ATTRIBUTION } from '../../constants/map';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { StatusBar } from 'expo-status-bar';
+import Constants from 'expo-constants';
+import * as Clipboard from 'expo-clipboard';
+import { Platform } from 'react-native';
+import { getDatabaseSize } from '../../database/database';
+import { hapticFeedback } from '../../services/haptics';
 import {
-  Shield,
-  Trash2,
-  FileText,
+  User,
+  SlidersHorizontal,
   MapPin,
-  Compass,
-  ChevronRight,
-  ExternalLink,
-  Github,
-  Linkedin,
-  Globe,
+  Database,
+  CircleHelp,
+  Info,
+  Shield,
+  FileText,
+  Download,
+  CloudUpload,
+  Trash2,
+  Fuel,
+  Settings2,
+  Clock,
+  FileCode,
+  Copy,
 } from 'lucide-react-native';
+import { Colors } from '../../constants/theme';
+import { UI } from '../../constants/ui';
+import { MAP_ATTRIBUTION } from '../../constants/map';
+import { deleteAllRides } from '../../database/rideRepository';
+import { deleteAllFuelLogs } from '../../database/fuelRepository';
+import { InstagramIcon } from '../../components/svg/InstagramIcon';
+import { useTabBarHeight } from '../../components/FloatingTabBar';
+import { ScreenHeader } from '../../components/ui/ScreenHeader';
+import { Card } from '../../components/ui/Card';
+import { ListRow } from '../../components/ui/ListRow';
+import { InfoSheet, SheetAction, SheetLabel } from '../../components/ui/InfoSheet';
+import { PreferencesPanel } from '../../components/settings/PreferencesPanel';
+import { FadeInUpView } from '../../lib/motion';
+
+type SheetKey = 'profile' | 'prefs' | 'location' | 'data' | 'help' | 'about' | 'backup' | null;
+
+const APP_VERSION: string = Constants.expoConfig?.version ?? '1.0.0';
+const BUILD_NUMBER: string = Constants.expoConfig?.ios?.buildNumber ?? '1';
+
+const FAQS: { q: string; a: string }[] = [
+  {
+    q: 'Where is my data stored?',
+    a: 'Only on this device, in a local database. Rideoxy has no accounts, no cloud sync and no trackers.',
+  },
+  {
+    q: 'How do I export a ride?',
+    a: 'Open a ride from My Rides and use the GPX export button. The file opens in your device share sheet.',
+  },
+  {
+    q: 'Why does Rideoxy use background location?',
+    a: 'Only while a ride is recording, so your route continues when the screen is off or the phone is mounted.',
+  },
+  {
+    q: 'How do I switch km / miles or litres / gallons?',
+    a: 'Open App Preferences on this screen. Fuel, Rides, Stats and Garage all follow your choice.',
+  },
+];
+
+const IconBubble: React.FC<{ children: React.ReactNode }> = ({ children }) => (
+  <View style={styles.bubble}>{children}</View>
+);
 
 export default function SettingsScreen() {
   const router = useRouter();
-  const [unitIsMiles, setUnitIsMiles] = useState(false);
+  const insets = useSafeAreaInsets();
+  const tabBarHeight = useTabBarHeight();
+  const [sheet, setSheet] = useState<SheetKey>(null);
 
-  const handleDeleteAll = () => {
-    Alert.alert(
-      'Delete All Rides',
-      'Are you sure you want to permanently delete all recorded motorcycle rides from this device? This action cannot be undone.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete All',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              await deleteAllRides();
-              Alert.alert('Data Cleared', 'All local rides have been deleted.');
-            } catch (err) {
-              Alert.alert('Error', 'Failed to delete all rides.');
-            }
+  const iconProps = { size: 20, color: UI.textPrimary, strokeWidth: 1.6 } as const;
+  const close = () => setSheet(null);
+
+  const copyDiagnostics = async () => {
+    try {
+      hapticFeedback.light();
+      const sizeBytes = await getDatabaseSize();
+      const kb = (sizeBytes / 1024).toFixed(1);
+      const text = [
+        `App: Rideoxy`,
+        `Version: ${APP_VERSION}`,
+        `Build: ${BUILD_NUMBER}`,
+        `OS: ${Platform.OS} ${Platform.Version}`,
+        `Database Size: ${kb} KB (${sizeBytes} bytes)`,
+        `Storage Mode: Local On-Device SQLite`,
+        `Export Date: ${new Date().toISOString()}`,
+      ].join('\n');
+
+      await Clipboard.setStringAsync(text);
+      hapticFeedback.success();
+      Alert.alert(
+        'Diagnostics Copied',
+        `System diagnostics copied to clipboard:\n\n${text}\n\nNo data is transmitted over the network.`
+      );
+    } catch {
+      Alert.alert('Error', 'Could not copy diagnostics.');
+    }
+  };
+
+  const goTo = (path: string) => {
+    close();
+    // Allow the sheet to dismiss before navigating.
+    setTimeout(() => router.push(path as never), 120);
+  };
+
+  const confirmDelete = (title: string, message: string, action: () => Promise<void>, doneMessage: string) => {
+    close();
+    setTimeout(
+      () =>
+        Alert.alert(title, message, [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Delete',
+            style: 'destructive',
+            onPress: async () => {
+              try {
+                await action();
+                Alert.alert('Data Cleared', doneMessage);
+              } catch (err) {
+                Alert.alert('Error', 'Could not clear the data. Please try again.');
+              }
+            },
           },
-        },
-      ]
+        ]),
+      150
     );
   };
 
-  const showLocationUsageInfo = () => {
-    Alert.alert(
-      'Location Precision in Rideoxy',
-      'Rideoxy uses precise device GPS location while a ride is being recorded. Background location is active solely during a recording session so your telemetry continues uninterrupted when your phone screen is off or mounted.'
-    );
-  };
+  const comingSoon = (title: string, body: string) => (
+    <View style={styles.soonWrap}>
+      <View style={styles.soonIcon}>
+        <Clock size={22} color={UI.accent} strokeWidth={1.8} />
+      </View>
+      <Text style={styles.soonTitle}>Coming soon</Text>
+      <Text style={styles.soonBody}>{body}</Text>
+    </View>
+  );
 
   return (
-    <SafeAreaView style={styles.safeArea} edges={['top', 'left', 'right']}>
+    <View style={styles.screen}>
+      <StatusBar style="light" />
       <ScrollView
-        style={styles.scrollView}
-        contentContainerStyle={styles.scrollContent}
+        style={styles.scroll}
+        contentContainerStyle={{
+          paddingTop: insets.top + 14,
+          paddingBottom: tabBarHeight,
+          paddingHorizontal: UI.screenPad,
+        }}
         showsVerticalScrollIndicator={false}
       >
-        {/* Header */}
-        <View style={styles.header}>
-          <Wordmark size="md" showTagline={false} />
-          <Text style={styles.headerTitle}>SETTINGS</Text>
-          <Text style={styles.brandVersion}>v1.0.0 · Local-First Motorcycle Telemetry</Text>
-        </View>
+        <FadeInUpView index={0}>
+          <ScreenHeader title="Settings" subtitle="Personalize your ride experience." />
+        </FadeInUpView>
 
-        {/* Section: Tracking */}
-        <View style={styles.section}>
-          <Text style={styles.sectionHeader}>TELEMETRY & SENSORS</Text>
+        <FadeInUpView index={1}>
+          <Card padded={false}>
+            <ListRow
+              variant="plain"
+              divider
+              leading={<IconBubble><User {...iconProps} /></IconBubble>}
+              title="Profile"
+              subtitle="Manage your account"
+              onPress={() => setSheet('profile')}
+            />
+            <ListRow
+              variant="plain"
+              divider
+              leading={<IconBubble><SlidersHorizontal {...iconProps} /></IconBubble>}
+              title="App Preferences"
+              subtitle="Theme, units, notifications"
+              onPress={() => setSheet('prefs')}
+            />
+            <ListRow
+              variant="plain"
+              divider
+              leading={<IconBubble><MapPin {...iconProps} /></IconBubble>}
+              title="Location & Tracking"
+              subtitle="GPS, background services"
+              onPress={() => setSheet('location')}
+            />
+            <ListRow
+              variant="plain"
+              divider
+              leading={<IconBubble><Database {...iconProps} /></IconBubble>}
+              title="Data & Storage"
+              subtitle="Backup, export, clear data"
+              onPress={() => setSheet('data')}
+            />
+            <ListRow
+              variant="plain"
+              leading={<IconBubble><CircleHelp {...iconProps} /></IconBubble>}
+              title="Help & Support"
+              subtitle="FAQs, contact us"
+              onPress={() => setSheet('help')}
+            />
+          </Card>
+        </FadeInUpView>
 
-          <View style={styles.card}>
-            <View style={styles.row}>
-              <View style={styles.rowLeft}>
-                <View style={styles.iconCircle}>
-                  <Compass size={16} color={Colors.primary} />
-                </View>
-                <View>
-                  <Text style={styles.rowTitle}>Distance Units</Text>
-                  <Text style={styles.rowSubtitle}>
-                    {unitIsMiles ? 'Miles & MPH' : 'Kilometers & KM/H (Default)'}
-                  </Text>
-                </View>
-              </View>
-              <Switch
-                value={unitIsMiles}
-                onValueChange={setUnitIsMiles}
-                trackColor={{ false: Colors.surfaceBorder, true: Colors.primaryDark }}
-                thumbColor={unitIsMiles ? Colors.primary : Colors.textSecondary}
-              />
-            </View>
-
-            <View style={styles.divider} />
-
-            <TouchableOpacity
-              style={styles.row}
-              onPress={showLocationUsageInfo}
-              activeOpacity={0.7}
-            >
-              <View style={styles.rowLeft}>
-                <View style={styles.iconCircle}>
-                  <MapPin size={16} color={Colors.primary} />
-                </View>
-                <View>
-                  <Text style={styles.rowTitle}>GPS & Location Precision</Text>
-                  <Text style={styles.rowSubtitle}>High accuracy telemetry & background recording</Text>
-                </View>
-              </View>
-              <ChevronRight size={16} color={Colors.textMuted} />
-            </TouchableOpacity>
-          </View>
-        </View>
-
-        {/* Section: Privacy & Security */}
-        <View style={styles.section}>
-          <Text style={styles.sectionHeader}>PRIVACY & DATA</Text>
-
-          <View style={styles.card}>
-            <TouchableOpacity
-              style={styles.row}
-              onPress={() => router.push('/privacy')}
-              activeOpacity={0.7}
-            >
-              <View style={styles.rowLeft}>
-                <View style={styles.iconCircle}>
-                  <Shield size={16} color={Colors.primary} />
-                </View>
-                <View>
-                  <Text style={styles.rowTitle}>Privacy Policy</Text>
-                  <Text style={styles.rowSubtitle}>Local storage & offline telemetry disclosure</Text>
-                </View>
-              </View>
-              <ChevronRight size={16} color={Colors.textMuted} />
-            </TouchableOpacity>
-          </View>
-        </View>
-
-        {/* Section: Data Management */}
-        <View style={styles.section}>
-          <Text style={styles.sectionHeader}>STORAGE MANAGEMENT</Text>
-
-          <View style={styles.card}>
-            <TouchableOpacity
-              style={styles.row}
-              onPress={handleDeleteAll}
-              activeOpacity={0.7}
-            >
-              <View style={styles.rowLeft}>
-                <View style={[styles.iconCircle, { backgroundColor: Colors.dangerSurface }]}>
-                  <Trash2 size={16} color={Colors.danger} />
-                </View>
-                <View>
-                  <Text style={[styles.rowTitle, { color: Colors.danger }]}>Delete All Rides</Text>
-                  <Text style={styles.rowSubtitle}>Permanently clear all SQLite ride records</Text>
-                </View>
-              </View>
-              <ChevronRight size={16} color={Colors.danger} />
-            </TouchableOpacity>
-          </View>
-        </View>
-
-        {/* Section: Attribution & Credits */}
-        <View style={styles.section}>
-          <Text style={styles.sectionHeader}>ABOUT & ATTRIBUTION</Text>
-
-          <View style={styles.card}>
-            <TouchableOpacity
-              style={styles.row}
-              onPress={() => Linking.openURL('https://instagram.com/nam7sh')}
-              activeOpacity={0.7}
-            >
-              <View style={styles.rowLeft}>
-                <View style={[styles.iconCircle, { backgroundColor: 'rgba(225, 48, 108, 0.12)' }]}>
-                  <InstagramIcon size={16} color="#E1306C" />
-                </View>
-                <View>
-                  <Text style={styles.rowTitle}>Developer Profile</Text>
-                  <Text style={[styles.rowSubtitle, { color: Colors.primary }]}>
-                    instagram.com/nam7sh
-                  </Text>
-                </View>
-              </View>
-              <ExternalLink size={14} color={Colors.textMuted} />
-            </TouchableOpacity>
-
-            <View style={styles.divider} />
-
-            <TouchableOpacity
-              style={styles.row}
-              onPress={() => Linking.openURL('https://github.com/p3xz')}
-              activeOpacity={0.7}
-            >
-              <View style={styles.rowLeft}>
-                <View style={[styles.iconCircle, { backgroundColor: 'rgba(255, 255, 255, 0.08)' }]}>
-                  <Github size={16} color={Colors.text} />
-                </View>
-                <View>
-                  <Text style={styles.rowTitle}>GitHub</Text>
-                  <Text style={[styles.rowSubtitle, { color: Colors.primary }]}>
-                    github.com/p3xz
-                  </Text>
-                </View>
-              </View>
-              <ExternalLink size={14} color={Colors.textMuted} />
-            </TouchableOpacity>
-
-            <View style={styles.divider} />
-
-            <TouchableOpacity
-              style={styles.row}
-              onPress={() => Linking.openURL('https://linkedin.com/in/namish-yadav-639769408')}
-              activeOpacity={0.7}
-            >
-              <View style={styles.rowLeft}>
-                <View style={[styles.iconCircle, { backgroundColor: 'rgba(10, 102, 194, 0.12)' }]}>
-                  <Linkedin size={16} color="#0A66C2" />
-                </View>
-                <View>
-                  <Text style={styles.rowTitle}>LinkedIn</Text>
-                  <Text style={[styles.rowSubtitle, { color: Colors.primary }]}>
-                    Namish Yadav
-                  </Text>
-                </View>
-              </View>
-              <ExternalLink size={14} color={Colors.textMuted} />
-            </TouchableOpacity>
-
-            <View style={styles.divider} />
-
-            <TouchableOpacity
-              style={styles.row}
-              onPress={() => Linking.openURL('https://namishhh.vercel.app')}
-              activeOpacity={0.7}
-            >
-              <View style={styles.rowLeft}>
-                <View style={styles.iconCircle}>
-                  <Globe size={16} color={Colors.primary} />
-                </View>
-                <View>
-                  <Text style={styles.rowTitle}>Portfolio</Text>
-                  <Text style={[styles.rowSubtitle, { color: Colors.primary }]}>
-                    namishhh.vercel.app
-                  </Text>
-                </View>
-              </View>
-              <ExternalLink size={14} color={Colors.textMuted} />
-            </TouchableOpacity>
-
-            <View style={styles.divider} />
-
-            <View style={styles.attributionBox}>
-              <Text style={styles.attributionHeading}>Geospatial & Vector Tiles</Text>
-              <Text style={styles.attributionBody}>
-                {MAP_ATTRIBUTION.attributionNotice}
-              </Text>
-            </View>
-
-            <View style={styles.divider} />
-
-            <TouchableOpacity
-              style={styles.row}
-              onPress={() => router.push('/licenses')}
-              activeOpacity={0.7}
-            >
-              <View style={styles.rowLeft}>
-                <View style={styles.iconCircle}>
-                  <FileText size={16} color={Colors.primary} />
-                </View>
-                <View>
-                  <Text style={styles.rowTitle}>Third-Party Licenses</Text>
-                  <Text style={styles.rowSubtitle}>Open source libraries and notices</Text>
-                </View>
-              </View>
-              <ChevronRight size={16} color={Colors.textMuted} />
-            </TouchableOpacity>
-          </View>
-        </View>
+        <FadeInUpView index={2}>
+          <Card padded={false} style={styles.aboutCard}>
+            <ListRow
+              variant="plain"
+              divider
+              leading={<IconBubble><Info {...iconProps} /></IconBubble>}
+              title="About RIDEOXY"
+              subtitle={`Version ${APP_VERSION} (Build ${BUILD_NUMBER})`}
+              onPress={() => setSheet('about')}
+            />
+            <ListRow
+              variant="plain"
+              leading={<IconBubble><FileCode {...iconProps} /></IconBubble>}
+              title="System Diagnostics"
+              subtitle="Copy OS version, build, & DB size to clipboard"
+              onPress={copyDiagnostics}
+            />
+          </Card>
+        </FadeInUpView>
       </ScrollView>
-    </SafeAreaView>
+
+      {/* Profile (no accounts in an offline app) */}
+      <InfoSheet visible={sheet === 'profile'} title="Profile" subtitle="Manage your account" onClose={close}>
+        {comingSoon(
+          'Profile',
+          'Rideoxy is fully offline and has no accounts. A rider profile will arrive in a future update.'
+        )}
+      </InfoSheet>
+
+      {/* Backup placeholder */}
+      <InfoSheet visible={sheet === 'backup'} title="Backup" subtitle="Protect your ride history" onClose={close}>
+        {comingSoon('Backup', 'Local backup and restore is not available yet. Your data stays safely on this device.')}
+      </InfoSheet>
+
+      {/* App Preferences: units + currency */}
+      <InfoSheet
+        visible={sheet === 'prefs'}
+        title="App Preferences"
+        subtitle="Units and currency apply across the whole app."
+        onClose={close}
+      >
+        {sheet === 'prefs' ? <PreferencesPanel /> : null}
+      </InfoSheet>
+
+      {/* Location & Tracking */}
+      <InfoSheet visible={sheet === 'location'} title="Location & Tracking" subtitle="GPS, background services" onClose={close}>
+        <Text style={styles.paragraph}>
+          Rideoxy uses precise device GPS while a ride is being recorded. Background location is active only during a
+          recording session, so your telemetry continues when the screen is off or the phone is mounted.
+        </Text>
+        <SheetAction
+          icon={<Settings2 size={16} color={UI.textPrimary} />}
+          label="Open system settings"
+          description="Review location permission for Rideoxy"
+          onPress={() => {
+            close();
+            Linking.openSettings().catch(() => {});
+          }}
+        />
+      </InfoSheet>
+
+      {/* Data & Storage */}
+      <InfoSheet visible={sheet === 'data'} title="Data & Storage" subtitle="Backup, export, clear data" onClose={close}>
+        <SheetAction
+          icon={<Download size={16} color={UI.textPrimary} />}
+          label="Export GPX"
+          description="Open any ride in My Rides and tap its GPX export button"
+          onPress={() => goTo('/(tabs)/history')}
+        />
+        <SheetAction
+          icon={<CloudUpload size={16} color={UI.textPrimary} />}
+          label="Backup"
+          description="Coming soon"
+          onPress={() => setSheet('backup')}
+        />
+        <SheetLabel>CLEAR DATA</SheetLabel>
+        <SheetAction
+          icon={<Trash2 size={16} color={Colors.danger} />}
+          label="Delete All Rides"
+          description="Permanently clear all ride records and routes"
+          destructive
+          onPress={() =>
+            confirmDelete(
+              'Delete All Rides',
+              'Are you sure you want to permanently delete all recorded motorcycle rides from this device? This action cannot be undone.',
+              deleteAllRides,
+              'All local rides have been deleted.'
+            )
+          }
+        />
+        <SheetAction
+          icon={<Fuel size={16} color={Colors.danger} />}
+          label="Delete All Fuel Logs"
+          description="Permanently clear every fuel entry"
+          destructive
+          onPress={() =>
+            confirmDelete(
+              'Delete All Fuel Logs',
+              'Are you sure you want to permanently delete all fuel logs from this device? This action cannot be undone.',
+              deleteAllFuelLogs,
+              'All local fuel logs have been deleted.'
+            )
+          }
+        />
+        <SheetAction
+          icon={<Trash2 size={16} color={Colors.danger} />}
+          label="Delete All Data"
+          description="Permanently erase all rides and fuel logs"
+          destructive
+          onPress={() =>
+            confirmDelete(
+              'Delete All Data',
+              'Are you sure you want to permanently erase ALL motorcycle rides and fuel logs from this device? This action cannot be undone.',
+              async () => {
+                await deleteAllRides();
+                await deleteAllFuelLogs();
+              },
+              'All rides and fuel logs have been permanently erased.'
+            )
+          }
+        />
+      </InfoSheet>
+
+      {/* Help & Support */}
+      <InfoSheet visible={sheet === 'help'} title="Help & Support" subtitle="FAQs, contact us" onClose={close}>
+        <SheetLabel>FAQS</SheetLabel>
+        {FAQS.map((f) => (
+          <View key={f.q} style={styles.faq}>
+            <Text style={styles.faqQ}>{f.q}</Text>
+            <Text style={styles.faqA}>{f.a}</Text>
+          </View>
+        ))}
+        <SheetLabel>CONTACT US</SheetLabel>
+        <SheetAction
+          icon={<InstagramIcon size={16} color="#E1306C" />}
+          label="Developer Profile"
+          description="instagram.com/nam7sh"
+          onPress={() => Linking.openURL('https://instagram.com/nam7sh').catch(() => {})}
+        />
+      </InfoSheet>
+
+      {/* About */}
+      <InfoSheet visible={sheet === 'about'} title="About RIDEOXY" subtitle={`Version ${APP_VERSION} · More Rides. Better Days.`} onClose={close}>
+        <Text style={styles.paragraph}>
+          Privacy-first, local-only motorcycle ride tracking and fuel intelligence.
+        </Text>
+        <SheetAction
+          icon={<Shield size={16} color={UI.textPrimary} />}
+          label="Privacy Policy"
+          description="Local storage & offline telemetry disclosure"
+          onPress={() => goTo('/privacy')}
+        />
+        <SheetAction
+          icon={<FileText size={16} color={UI.textPrimary} />}
+          label="Third-Party Licenses"
+          description="Open source libraries and notices"
+          onPress={() => goTo('/licenses')}
+        />
+        <SheetLabel>SYSTEM DIAGNOSTICS</SheetLabel>
+        <SheetAction
+          icon={<Copy size={16} color={UI.textPrimary} />}
+          label="Copy Diagnostics to Clipboard"
+          description={`Rideoxy v${APP_VERSION} (${BUILD_NUMBER}) · ${Platform.OS} ${Platform.Version}`}
+          onPress={copyDiagnostics}
+        />
+        <SheetLabel>GEOSPATIAL & VECTOR TILES</SheetLabel>
+        <Text style={styles.paragraph}>{MAP_ATTRIBUTION.attributionNotice}</Text>
+      </InfoSheet>
+    </View>
   );
 }
 
-
 const styles = StyleSheet.create({
-  safeArea: {
+  screen: {
     flex: 1,
     backgroundColor: Colors.background,
   },
-  scrollView: {
+  scroll: {
     flex: 1,
   },
-  scrollContent: {
-    paddingHorizontal: 16,
-    paddingTop: 8,
-    paddingBottom: 36,
+  aboutCard: {
+    marginTop: 18,
   },
-  header: {
-    marginBottom: 16,
-  },
-  headerTitle: {
-    color: Colors.text,
-    fontSize: 24,
-    fontWeight: '900',
-    letterSpacing: -0.5,
-    marginTop: 8,
-  },
-  brandVersion: {
-    color: Colors.textMuted,
-    fontSize: 11,
-    fontWeight: '600',
-    marginTop: 2,
-    letterSpacing: 0.3,
-  },
-  section: {
-    marginBottom: 16,
-  },
-  sectionHeader: {
-    color: Colors.textMuted,
-    fontSize: 10,
-    fontWeight: '800',
-    letterSpacing: 1.2,
-    marginBottom: 6,
-    marginLeft: 2,
-  },
-  card: {
-    backgroundColor: Colors.surface,
-    borderRadius: 12,
+  bubble: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     borderWidth: 1,
-    borderColor: Colors.surfaceBorder,
-    overflow: 'hidden',
-  },
-  row: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-  },
-  rowLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    flex: 1,
-  },
-  iconCircle: {
-    width: 32,
-    height: 32,
-    borderRadius: 8,
-    backgroundColor: Colors.surfaceSubtle,
+    borderColor: 'rgba(255,255,255,0.12)',
+    backgroundColor: 'rgba(255,255,255,0.04)',
     alignItems: 'center',
     justifyContent: 'center',
   },
-  rowTitle: {
-    color: Colors.text,
+  paragraph: {
+    color: UI.textSecondary,
+    fontSize: 13,
+    lineHeight: 19,
+    paddingVertical: 6,
+  },
+  soonWrap: {
+    alignItems: 'center',
+    paddingVertical: 24,
+    paddingHorizontal: 12,
+  },
+  soonIcon: {
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    backgroundColor: UI.accentSoft,
+    borderWidth: 1,
+    borderColor: UI.accentBorder,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 12,
+  },
+  soonTitle: {
+    color: UI.textPrimary,
+    fontSize: 16,
+    fontWeight: '600',
+    marginBottom: 6,
+  },
+  soonBody: {
+    color: UI.textSecondary,
+    fontSize: 13,
+    lineHeight: 19,
+    textAlign: 'center',
+  },
+  faq: {
+    paddingVertical: 10,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: UI.hairline,
+  },
+  faqQ: {
+    color: UI.textPrimary,
     fontSize: 14,
-    fontWeight: '700',
+    fontWeight: '600',
   },
-  rowSubtitle: {
-    color: Colors.textSecondary,
-    fontSize: 11,
-    marginTop: 1,
-  },
-  divider: {
-    height: 1,
-    backgroundColor: Colors.surfaceBorder,
-    marginHorizontal: 14,
-  },
-  attributionBox: {
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-  },
-  attributionHeading: {
-    color: Colors.text,
-    fontSize: 12,
-    fontWeight: '700',
-    marginBottom: 3,
-  },
-  attributionBody: {
-    color: Colors.textSecondary,
-    fontSize: 11,
-    lineHeight: 16,
+  faqA: {
+    color: UI.textSecondary,
+    fontSize: 12.5,
+    lineHeight: 18,
+    marginTop: 4,
   },
 });

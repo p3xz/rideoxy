@@ -1,0 +1,223 @@
+name: iOS CI & Unsigned Sideload Build
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ────────────────────────────────────────────────────────────────────────────
+  # Job A: Simulator Build (Runs on every push and PR, zero Apple account needed)
+  # ────────────────────────────────────────────────────────────────────────────
+  ios-simulator-build:
+    name: iOS Simulator Build
+    runs-on: macos-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js LTS
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Cache CocoaPods
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cocoapods/repos
+            ~/Library/Caches/CocoaPods
+          key: ${{ runner.os }}-pods-${{ hashFiles('package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-pods-
+
+      - name: Expo Prebuild (iOS)
+        run: npx expo prebuild --platform ios --clean
+
+      - name: Install Pods
+        run: |
+          cd ios
+          pod install --repo-update
+          cd ..
+
+      - name: Detect Workspace and Scheme
+        run: |
+          WORKSPACE=$(find ios -name "*.xcworkspace" -maxdepth 1 | head -n 1)
+          if [ -z "$WORKSPACE" ]; then
+            echo "Error: No .xcworkspace found"
+            exit 1
+          fi
+          SCHEME=$(xcodebuild -list -workspace "$WORKSPACE" -json | jq -r '.workspace.schemes[0]')
+          echo "Detected Workspace: $WORKSPACE"
+          echo "Detected Scheme: $SCHEME"
+          echo "WORKSPACE=$WORKSPACE" >> $GITHUB_ENV
+          echo "SCHEME=$SCHEME" >> $GITHUB_ENV
+
+      - name: Build for iPhone Simulator
+        run: |
+          xcodebuild build \
+            -workspace "$WORKSPACE" \
+            -scheme "$SCHEME" \
+            -configuration Debug \
+            -sdk iphonesimulator \
+            -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            | tee xcodebuild-simulator.log
+
+      - name: Upload Simulator Build Log (on failure)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-simulator-build-log
+          path: xcodebuild-simulator.log
+
+      - name: Upload Simulator .app Artifact
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Rideoxy-simulator-app
+          path: build/Build/Products/Debug-iphonesimulator/*.app
+
+  # ────────────────────────────────────────────────────────────────────────────
+  # Job B: Free Sideload Unsigned .IPA (workflow_dispatch & version tags)
+  # ────────────────────────────────────────────────────────────────────────────
+  ios-unsigned-ipa:
+    name: Build Free Unsigned .IPA
+    if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v')
+    runs-on: macos-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js LTS
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Cache CocoaPods
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cocoapods/repos
+            ~/Library/Caches/CocoaPods
+          key: ${{ runner.os }}-pods-${{ hashFiles('package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-pods-
+
+      - name: Expo Prebuild (iOS)
+        run: npx expo prebuild --platform ios --clean
+
+      - name: Install Pods
+        run: |
+          cd ios
+          pod install --repo-update
+          cd ..
+
+      - name: Detect Workspace and Scheme
+        run: |
+          WORKSPACE=$(find ios -name "*.xcworkspace" -maxdepth 1 | head -n 1)
+          if [ -z "$WORKSPACE" ]; then
+            echo "Error: No .xcworkspace found"
+            exit 1
+          fi
+          SCHEME=$(xcodebuild -list -workspace "$WORKSPACE" -json | jq -r '.workspace.schemes[0]')
+          echo "Detected Workspace: $WORKSPACE"
+          echo "Detected Scheme: $SCHEME"
+          echo "WORKSPACE=$WORKSPACE" >> $GITHUB_ENV
+          echo "SCHEME=$SCHEME" >> $GITHUB_ENV
+
+      - name: Xcode Archive (Release, Unsigned)
+        run: |
+          xcodebuild archive \
+            -workspace "$WORKSPACE" \
+            -scheme "$SCHEME" \
+            -configuration Release \
+            -sdk iphoneos \
+            -archivePath build/Rideoxy.xcarchive \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            | tee xcodebuild-archive.log
+
+      - name: Upload Archive Log (on failure)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-archive-log
+          path: xcodebuild-archive.log
+
+      - name: Package Unsigned .ipa & Verify
+        run: |
+          mkdir -p Payload
+          cp -R build/Rideoxy.xcarchive/Products/Applications/*.app Payload/
+          APP_DIR=$(find Payload -name "*.app" -maxdepth 1 | head -n 1)
+          if [ -z "$APP_DIR" ] || [ ! -d "$APP_DIR" ]; then
+            echo "Error: No .app bundle found inside Payload directory"
+            exit 1
+          fi
+
+          INFO_PLIST="$APP_DIR/Info.plist"
+          if [ ! -f "$INFO_PLIST" ]; then
+            echo "Error: Info.plist not found at $INFO_PLIST"
+            exit 1
+          fi
+
+          echo "Validating Info.plist keys..."
+          plutil -p "$INFO_PLIST" | grep -i "NSLocation" || {
+            echo "Error: NSLocation strings missing in $INFO_PLIST"
+            exit 1
+          }
+
+          echo "Packaging Payload into Rideoxy-unsigned.ipa..."
+          zip -r Rideoxy-unsigned.ipa Payload
+
+          echo "=== Unsigned .IPA Created Successfully ==="
+          ls -lh Rideoxy-unsigned.ipa
+
+      - name: Upload Unsigned .ipa Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Rideoxy-unsigned-ipa
+          path: Rideoxy-unsigned.ipa
+
+  # ────────────────────────────────────────────────────────────────────────────
+  # Job C: EAS Production Build (OPTIONAL, workflow_dispatch only with EXPO_TOKEN)
+  # ────────────────────────────────────────────────────────────────────────────
+  ios-eas-build:
+    name: Optional EAS Production Build
+    if: github.event_name == 'workflow_dispatch' && env.EXPO_TOKEN != ''
+    runs-on: ubuntu-latest
+    env:
+      EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js LTS
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run EAS Build
+        run: npx eas-cli build --platform ios --profile production --non-interactive

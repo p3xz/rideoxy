@@ -9,7 +9,10 @@ import { Ride } from '../types/ride';
  */
 
 export async function getOverallStatistics(): Promise<OverallStatistics> {
+  const startTime = Date.now();
+  console.log('[Rideoxy] [StatsService] getOverallStatistics: acquiring DB connection...');
   const db = await getDatabase();
+  console.log(`[Rideoxy] [StatsService] DB acquired in ${Date.now() - startTime}ms. Executing aggregate queries...`);
 
   // Get current month start in ms
   const now = new Date();
@@ -42,6 +45,11 @@ export async function getOverallStatistics(): Promise<OverallStatistics> {
     WHERE status = 'completed' AND start_time >= ?;
   `, [startOfMonth]);
 
+  console.log(`[Rideoxy] [StatsService] getOverallStatistics completed in ${Date.now() - startTime}ms`, {
+    totalDistance: aggregateRow?.total_distance,
+    totalRides: aggregateRow?.total_rides,
+    thisMonthDistance: monthRow?.month_distance,
+  });
 
   const totalDistance = aggregateRow?.total_distance ?? 0.0;
   const totalRides = aggregateRow?.total_rides ?? 0;

@@ -1,8 +1,11 @@
 import { getDatabase } from './database';
-import { Ride, RideStatus } from '../types/ride';
+import { Ride, RideStatus, EstimateSource } from '../types/ride';
 
 export async function createRide(ride: Ride): Promise<void> {
+  const startTime = Date.now();
+  console.log('[Rideoxy] [RideRepo] createRide: acquiring DB connection for rideId:', ride.id);
   const db = await getDatabase();
+  console.log(`[Rideoxy] [RideRepo] createRide: inserting ride into database...`);
   await db.runAsync(
     `INSERT INTO rides (id, start_time, end_time, duration, moving_time, distance, average_speed, max_speed, status, created_at)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`,
@@ -19,6 +22,7 @@ export async function createRide(ride: Ride): Promise<void> {
       ride.created_at,
     ]
   );
+  console.log(`[Rideoxy] [RideRepo] createRide completed in ${Date.now() - startTime}ms`);
 }
 
 export async function updateRide(
@@ -93,11 +97,15 @@ export async function getAllCompletedRides(): Promise<Ride[]> {
 }
 
 export async function getRecentCompletedRides(limit: number = 5): Promise<Ride[]> {
+  const startTime = Date.now();
+  console.log(`[Rideoxy] [RideRepo] getRecentCompletedRides: acquiring DB for limit=${limit}...`);
   const db = await getDatabase();
+  console.log(`[Rideoxy] [RideRepo] getRecentCompletedRides: executing query...`);
   const rows = await db.getAllAsync<Ride>(
     `SELECT * FROM rides WHERE status = 'completed' ORDER BY start_time DESC LIMIT ?;`,
     [limit]
   );
+  console.log(`[Rideoxy] [RideRepo] getRecentCompletedRides: fetched ${rows.length} rows in ${Date.now() - startTime}ms`);
   return rows;
 }
 
@@ -111,4 +119,26 @@ export async function deleteAllRides(): Promise<void> {
   const db = await getDatabase();
   await db.runAsync(`DELETE FROM track_points;`);
   await db.runAsync(`DELETE FROM rides;`);
+}
+
+export async function setRideEstimate(
+  rideId: string,
+  estimate: {
+    estimated_duration_sec: number | null;
+    estimated_distance_m: number | null;
+    estimate_source: EstimateSource | null;
+  }
+): Promise<void> {
+  const db = await getDatabase();
+  await db.runAsync(
+    `UPDATE rides
+     SET estimated_duration_sec = ?, estimated_distance_m = ?, estimate_source = ?
+     WHERE id = ?;`,
+    [
+      estimate.estimated_duration_sec,
+      estimate.estimated_distance_m,
+      estimate.estimate_source,
+      rideId,
+    ]
+  );
 }

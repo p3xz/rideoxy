@@ -27,18 +27,18 @@ export const MotorcycleIllustration: React.FC<MotorcycleIllustrationProps> = ({
       <Defs>
         <LinearGradient id="motoGlow" x1="0%" y1="0%" x2="100%" y2="0%">
           <Stop offset="0%" stopColor={accentColor} stopOpacity="0.8" />
-          <Stop offset="100%" stopColor="#A85A18" stopOpacity="0.25" />
+          <Stop offset="100%" stopColor="#2B8F89" stopOpacity="0.25" />
         </LinearGradient>
         <LinearGradient id="chassisGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-          <Stop offset="0%" stopColor="#232B3B" />
-          <Stop offset="100%" stopColor="#141822" />
+          <Stop offset="0%" stopColor="#181E1D" />
+          <Stop offset="100%" stopColor="#111515" />
         </LinearGradient>
       </Defs>
 
       {/* Ground Horizon Lines */}
       <Path
         d="M20 152 L300 152 M60 160 L260 160 M110 168 L210 168"
-        stroke="#232B3B"
+        stroke="#252E2A"
         strokeWidth="1.5"
         strokeLinecap="round"
         strokeDasharray="8 6"
