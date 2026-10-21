@@ -58,7 +58,7 @@ jobs:
             echo "Error: No .xcworkspace found"
             exit 1
           fi
-          SCHEME=$(xcodebuild -list -workspace "$WORKSPACE" -json | jq -r '.workspace.schemes[0]')
+          SCHEME=$(xcodebuild -list -workspace "$WORKSPACE" -json | jq -r --arg app "$(basename "$WORKSPACE" .xcworkspace)" '.workspace.schemes | (if index($app) then $app else .[0] end)')
           echo "Detected Workspace: $WORKSPACE"
           echo "Detected Scheme: $SCHEME"
           echo "WORKSPACE=$WORKSPACE" >> $GITHUB_ENV
@@ -137,7 +137,7 @@ jobs:
             echo "Error: No .xcworkspace found"
             exit 1
           fi
-          SCHEME=$(xcodebuild -list -workspace "$WORKSPACE" -json | jq -r '.workspace.schemes[0]')
+          SCHEME=$(xcodebuild -list -workspace "$WORKSPACE" -json | jq -r --arg app "$(basename "$WORKSPACE" .xcworkspace)" '.workspace.schemes | (if index($app) then $app else .[0] end)')
           echo "Detected Workspace: $WORKSPACE"
           echo "Detected Scheme: $SCHEME"
           echo "WORKSPACE=$WORKSPACE" >> $GITHUB_ENV
