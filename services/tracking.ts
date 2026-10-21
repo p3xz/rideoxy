@@ -10,6 +10,7 @@ import {
   updateRide,
   getActiveRide,
   deleteRide,
+  setRideEstimate,
 } from '../database/rideRepository';
 import {
   insertTrackPoint,
@@ -178,6 +179,10 @@ class TrackingService {
       const startTime = Date.now();
       const rideId = `ride_${startTime}_${Math.random().toString(36).substring(2, 7)}`;
 
+      const selectedMode = options?.rideMode ?? 'free';
+      const dest = options?.destination;
+      const manualMins = options?.manualMinutes;
+
       const newRide: Ride = {
         id: rideId,
         start_time: startTime,
@@ -189,6 +194,13 @@ class TrackingService {
         max_speed: 0,
         status: 'running',
         created_at: startTime,
+        ride_mode: selectedMode,
+        destination_name: dest?.name ?? null,
+        destination_lat: dest?.lat ?? null,
+        destination_lng: dest?.lng ?? null,
+        estimated_duration_sec: null,
+        estimated_distance_m: null,
+        estimate_source: null,
       };
 
       try {
@@ -274,6 +286,13 @@ class TrackingService {
           error: locErr instanceof Error ? locErr.message : 'Failed to start GPS tracking service.',
           errorType: 'location',
         };
+      }
+
+      // If destination mode: asynchronously resolve origin fix and compute estimate
+      if (selectedMode === 'destination' && dest) {
+        this.resolveDestinationEstimate(rideId, dest, manualMins, initialFix).catch((err) => {
+          console.warn('[Rideoxy] [TrackingService] Error computing destination estimate:', err);
+        });
       }
 
       this.notifyListeners(true);
@@ -451,6 +470,101 @@ class TrackingService {
     this.lastPointReceivedTime = 0;
     this.isGpsStale = false;
     this.notifyListeners(true);
+  }
+
+  /**
+   * Asynchronously resolves first accepted GPS fix from trackingService and computes route estimate
+   */
+  private async resolveDestinationEstimate(
+    rideId: string,
+    dest: { name: string; lat: number; lng: number },
+    manualMinutes?: number | null,
+    initialFix?: RawGPSPoint | null
+  ): Promise<void> {
+    const destinationCoords: Coordinates = { latitude: dest.lat, longitude: dest.lng };
+
+    // 1. Wait up to 10 seconds for the first accepted GPS fix
+    let originFix: Coordinates | null = null;
+    if (initialFix && initialFix.accuracy && initialFix.accuracy <= GPS_CONFIG.MAX_ACCEPTABLE_ACCURACY_METERS) {
+      originFix = { latitude: initialFix.latitude, longitude: initialFix.longitude };
+    } else {
+      const startWait = Date.now();
+      while (Date.now() - startWait < 10000) {
+        if (this.state.currentRide?.id !== rideId || this.state.status !== 'running') {
+          return; // Ride stopped or changed
+        }
+        if (
+          this.lastRecordedPoint &&
+          this.lastRecordedPoint.accuracy &&
+          this.lastRecordedPoint.accuracy <= GPS_CONFIG.MAX_ACCEPTABLE_ACCURACY_METERS
+        ) {
+          originFix = { latitude: this.lastRecordedPoint.latitude, longitude: this.lastRecordedPoint.longitude };
+          break;
+        }
+        await new Promise((resolve) => setTimeout(resolve, 500));
+      }
+    }
+
+    // 2. If manual minutes were entered, they take precedence (rider's explicit choice)
+    if (manualMinutes && manualMinutes > 0) {
+      const manualSec = Math.round(manualMinutes * 60);
+      let providerDistM: number | null = null;
+
+      // Attempt routing once to obtain estimated distance if origin fix was resolved
+      if (originFix) {
+        try {
+          const routeRes = await fetchRouteEta(originFix, destinationCoords, 'destination');
+          if (routeRes.success && !routeRes.estimate.isLowTrust) {
+            providerDistM = routeRes.estimate.distanceM;
+          }
+        } catch {
+          // Ignore routing errors when manual minutes are explicitly provided
+        }
+      }
+
+      await setRideEstimate(rideId, {
+        estimated_duration_sec: manualSec,
+        estimated_distance_m: providerDistM,
+        estimate_source: 'manual',
+      });
+
+      if (this.state.currentRide && this.state.currentRide.id === rideId) {
+        this.state.currentRide.estimated_duration_sec = manualSec;
+        this.state.currentRide.estimated_distance_m = providerDistM;
+        this.state.currentRide.estimate_source = 'manual';
+        this.notifyListeners(true);
+      }
+      return;
+    }
+
+    // 3. No manual minutes: provider estimate is required
+    if (!originFix) {
+      console.warn('[Rideoxy] [TrackingService] No qualifying GPS fix within 10s. Skipping ETA computation.');
+      return;
+    }
+
+    const routeRes = await fetchRouteEta(originFix, destinationCoords, 'destination');
+    if (routeRes.success) {
+      const est = routeRes.estimate;
+      // If low trust (snapped endpoint > 500m), skip estimate
+      if (est.isLowTrust) {
+        console.warn('[Rideoxy] [TrackingService] Route snapped endpoint > 500m from destination. Low-trust estimate skipped.');
+        return;
+      }
+
+      await setRideEstimate(rideId, {
+        estimated_duration_sec: est.durationSec,
+        estimated_distance_m: est.distanceM,
+        estimate_source: est.source,
+      });
+
+      if (this.state.currentRide && this.state.currentRide.id === rideId) {
+        this.state.currentRide.estimated_duration_sec = est.durationSec;
+        this.state.currentRide.estimated_distance_m = est.distanceM;
+        this.state.currentRide.estimate_source = est.source;
+        this.notifyListeners(true);
+      }
+    }
   }
 
   /**

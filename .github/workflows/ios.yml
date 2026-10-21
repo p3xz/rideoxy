@@ -12,6 +12,9 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  EXPO_PUBLIC_OLA_MAPS_API_KEY: ${{ secrets.OLA_MAPS_API_KEY }}
+
 jobs:
   # ────────────────────────────────────────────────────────────────────────────
   # Job A: Simulator Build (Runs on every push and PR, zero Apple account needed)

@@ -7,8 +7,10 @@ export async function createRide(ride: Ride): Promise<void> {
   const db = await getDatabase();
   console.log(`[Rideoxy] [RideRepo] createRide: inserting ride into database...`);
   await db.runAsync(
-    `INSERT INTO rides (id, start_time, end_time, duration, moving_time, distance, average_speed, max_speed, status, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`,
+    `INSERT INTO rides (
+      id, start_time, end_time, duration, moving_time, distance, average_speed, max_speed, status, created_at,
+      ride_mode, destination_name, destination_lat, destination_lng, estimated_duration_sec, estimated_distance_m, estimate_source
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`,
     [
       ride.id,
       ride.start_time,
@@ -20,6 +22,13 @@ export async function createRide(ride: Ride): Promise<void> {
       ride.max_speed,
       ride.status,
       ride.created_at,
+      ride.ride_mode ?? 'free',
+      ride.destination_name ?? null,
+      ride.destination_lat ?? null,
+      ride.destination_lng ?? null,
+      ride.estimated_duration_sec ?? null,
+      ride.estimated_distance_m ?? null,
+      ride.estimate_source ?? null,
     ]
   );
   console.log(`[Rideoxy] [RideRepo] createRide completed in ${Date.now() - startTime}ms`);

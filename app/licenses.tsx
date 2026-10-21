@@ -26,6 +26,12 @@ const LICENSES = [
     description: 'Map and routing data by OpenStreetMap contributors. Geocoding powered by Nominatim; routing powered by OSRM. © OpenStreetMap contributors.',
   },
   {
+    name: 'Ola Maps',
+    license: 'Proprietary Terms / Krutrim',
+    url: 'https://maps.olakrutrim.com',
+    description: 'Places autocomplete, geocoding, and routing services for Destination ride mode. © Krutrim / Ola Maps.',
+  },
+  {
     name: 'Expo & React Native',
     license: 'MIT License',
     url: 'https://github.com/expo/expo',

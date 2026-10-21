@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -18,6 +18,8 @@ import {
   clampManualMinutes,
   formatManualMinutesInWords,
   isManualMinutesImplausible,
+  getOlaMapsApiKey,
+  isOlaCircuitBreakerTripped,
 } from '../../services/etaService';
 import { getSetting, setSetting } from '../../database/settingsRepository';
 import { Colors } from '../../constants/theme';
@@ -51,6 +53,65 @@ export const DestinationStartFlow: React.FC<DestinationStartFlowProps> = ({
   const [results, setResults] = useState<GeocodeResult[]>([]);
   const [searchError, setSearchError] = useState<string | null>(null);
 
+  const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const activeAbortRef = useRef<AbortController | null>(null);
+
+  const isOlaAvailable = Boolean(getOlaMapsApiKey()) && !isOlaCircuitBreakerTripped();
+
+  // Autocomplete debouncing: only when Ola Maps is active (500ms, min 3 chars, cancels in-flight)
+  useEffect(() => {
+    if (!isOlaAvailable || mode !== 'destination' || selectedDestination) {
+      return;
+    }
+
+    const trimmed = query.trim();
+    if (trimmed.length < 3) {
+      setResults([]);
+      setSearchError(null);
+      return;
+    }
+
+    if (debounceTimerRef.current) {
+      clearTimeout(debounceTimerRef.current);
+    }
+
+    debounceTimerRef.current = setTimeout(async () => {
+      // Cancel any previous in-flight request
+      if (activeAbortRef.current) {
+        activeAbortRef.current.abort();
+      }
+      activeAbortRef.current = new AbortController();
+
+      setSearching(true);
+      setSearchError(null);
+
+      try {
+        const response = await searchDestination(trimmed, 'destination');
+        setSearching(false);
+
+        if (response.success) {
+          setResults(response.results);
+          if (response.results.length === 0) {
+            setSearchError('Destination not found. Check spelling, try a nearby town, or enter minutes manually.');
+          }
+        } else {
+          setResults([]);
+          if (response.error !== 'mode_guard') {
+            setSearchError(response.message);
+          }
+        }
+      } catch {
+        setSearching(false);
+      }
+    }, 500);
+
+    return () => {
+      if (debounceTimerRef.current) {
+        clearTimeout(debounceTimerRef.current);
+      }
+    };
+  }, [query, isOlaAvailable, mode, selectedDestination]);
+
   const handleSelectMode = async (nextMode: RideMode) => {
     if (nextMode === 'free') {
       // Switching back to Free Ride clears everything typed with zero network calls
@@ -69,7 +130,7 @@ export const DestinationStartFlow: React.FC<DestinationStartFlowProps> = ({
       if (!ack) {
         Alert.alert(
           'Destination Mode Privacy',
-          'Destination mode sends your destination name to OpenStreetMap Nominatim and route coordinates to OSRM to estimate travel time.\n\nFree Ride mode sends nothing over the network, and zero data is sent during or after your ride.',
+          'Destination mode sends your search text (while typing, to Ola Maps when enabled), the chosen destination, and start/destination coordinates to Ola Maps, or to OpenStreetMap Nominatim and OSRM when fallback is used.\n\nFree Ride sends nothing over the network, and zero data is sent during or after your ride.',
           [
             {
               text: 'Decline',
@@ -103,6 +164,13 @@ export const DestinationStartFlow: React.FC<DestinationStartFlowProps> = ({
       return;
     }
 
+    if (debounceTimerRef.current) {
+      clearTimeout(debounceTimerRef.current);
+    }
+    if (activeAbortRef.current) {
+      activeAbortRef.current.abort();
+    }
+
     setSearching(true);
     setSearchError(null);
     hapticFeedback.light();
@@ -131,6 +199,8 @@ export const DestinationStartFlow: React.FC<DestinationStartFlowProps> = ({
     hapticFeedback.light();
     onSelectDestination(null);
     setQuery('');
+    setResults([]);
+    setSearchError(null);
   };
 
   const parsedMinutes = parseInt(manualMinutes, 10);
@@ -140,8 +210,8 @@ export const DestinationStartFlow: React.FC<DestinationStartFlowProps> = ({
 
   return (
     <View style={styles.container}>
-      {/* 2-Option Segmented Control */}
-      <View style={styles.pillsWrap}>
+      {/* 2-Option Segmented Control: Free Ride | Destination */}
+      <View style={styles.pillsWrapper}>
         <SegmentedPills
           options={MODE_OPTIONS}
           value={mode}
@@ -149,20 +219,20 @@ export const DestinationStartFlow: React.FC<DestinationStartFlowProps> = ({
         />
       </View>
 
-      {/* Destination Form (Revealed only in Destination mode) */}
+      {/* Destination Mode Flow */}
       {mode === 'destination' && (
         <View style={styles.destinationPanel}>
-          {/* Selected Destination Card OR Search Input */}
+          {/* Destination Search Box or Selected Card */}
           {selectedDestination ? (
-            <View style={styles.selectedDestCard}>
-              <View style={styles.selectedDestIcon}>
-                <MapPin size={18} color={Colors.primary} />
+            <View style={styles.selectedDestinationCard}>
+              <View style={styles.pinCircle}>
+                <MapPin size={16} color={Colors.primary} />
               </View>
-              <View style={styles.selectedDestInfo}>
-                <Text style={styles.selectedDestName} numberOfLines={1} maxFontSizeMultiplier={1.3}>
+              <View style={styles.destTextWrap}>
+                <Text style={styles.destName} numberOfLines={1} maxFontSizeMultiplier={1.3}>
                   {selectedDestination.name}
                 </Text>
-                <Text style={styles.selectedDestSub} numberOfLines={1} maxFontSizeMultiplier={1.3}>
+                <Text style={styles.destSub} numberOfLines={1} maxFontSizeMultiplier={1.3}>
                   {[selectedDestination.district, selectedDestination.state].filter(Boolean).join(', ') ||
                     selectedDestination.display_name}
                 </Text>
@@ -189,12 +259,29 @@ export const DestinationStartFlow: React.FC<DestinationStartFlowProps> = ({
                   }}
                   onSubmitEditing={handleSearchSubmit}
                   returnKeyType="search"
-                  placeholder="Where to? (e.g. Nandi Hills)"
+                  placeholder={
+                    isOlaAvailable
+                      ? 'Where to? (e.g. Nandi Hills)'
+                      : 'Where to? Type and tap Search'
+                  }
                   placeholderTextColor={UI.textMuted}
                   style={styles.textInput}
                   autoCorrect={false}
                   maxFontSizeMultiplier={1.3}
                 />
+                {query.length > 0 && (
+                  <TouchableOpacity
+                    onPress={() => {
+                      setQuery('');
+                      setResults([]);
+                      setSearchError(null);
+                    }}
+                    style={styles.inputClearBtn}
+                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                  >
+                    <X size={14} color={UI.textMuted} />
+                  </TouchableOpacity>
+                )}
               </View>
 
               <TouchableOpacity
@@ -279,16 +366,14 @@ export const DestinationStartFlow: React.FC<DestinationStartFlowProps> = ({
               <Text style={styles.wordsEchoText} maxFontSizeMultiplier={1.3}>
                 {formatManualMinutesInWords(clampedMinutes)}
               </Text>
-            </View>
-          )}
-
-          {/* Gentle Warning for Implausible Values (> 6 hours) */}
-          {isImplausible && (
-            <View style={styles.warningBox}>
-              <AlertTriangle size={13} color={Colors.warning} style={{ marginRight: 6 }} />
-              <Text style={styles.warningText} maxFontSizeMultiplier={1.3}>
-                Note: Expected duration exceeds 6 hours. Double check for typos before starting.
-              </Text>
+              {isImplausible && (
+                <View style={styles.implausibleWarning}>
+                  <AlertTriangle size={12} color={Colors.warning} style={{ marginRight: 4 }} />
+                  <Text style={styles.implausibleWarningText} maxFontSizeMultiplier={1.3}>
+                    Note: Over 6 hours entered. Pace will compare against this target.
+                  </Text>
+                </View>
+              )}
             </View>
           )}
         </View>
@@ -300,17 +385,18 @@ export const DestinationStartFlow: React.FC<DestinationStartFlowProps> = ({
 const styles = StyleSheet.create({
   container: {
     width: '100%',
-    marginBottom: 14,
+    marginTop: 10,
+    marginBottom: 8,
   },
-  pillsWrap: {
+  pillsWrapper: {
     marginBottom: 10,
   },
   destinationPanel: {
-    backgroundColor: 'rgba(255, 255, 255, 0.04)',
+    backgroundColor: 'rgba(18, 24, 22, 0.75)',
+    borderRadius: 14,
     borderWidth: 1,
     borderColor: 'rgba(255, 255, 255, 0.08)',
-    borderRadius: 18,
-    padding: 14,
+    padding: 12,
   },
   searchRow: {
     flexDirection: 'row',
@@ -319,14 +405,14 @@ const styles = StyleSheet.create({
   },
   inputContainer: {
     flex: 1,
-    height: 46,
-    backgroundColor: '#0F1512',
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.12)',
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 12,
+    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.08)',
+    paddingHorizontal: 10,
+    height: 42,
   },
   inputIcon: {
     marginRight: 8,
@@ -335,23 +421,64 @@ const styles = StyleSheet.create({
     flex: 1,
     color: '#FFFFFF',
     fontSize: 14,
-    height: '100%',
+    paddingVertical: 0,
+  },
+  inputClearBtn: {
+    padding: 4,
   },
   searchSubmitBtn: {
-    width: 46,
-    height: 46,
-    borderRadius: 12,
+    width: 42,
+    height: 42,
+    borderRadius: 10,
     backgroundColor: Colors.primary,
     alignItems: 'center',
     justifyContent: 'center',
   },
+  selectedDestinationCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(52, 211, 153, 0.1)',
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: 'rgba(52, 211, 153, 0.3)',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+  pinCircle: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: 'rgba(52, 211, 153, 0.2)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 10,
+  },
+  destTextWrap: {
+    flex: 1,
+  },
+  destName: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  destSub: {
+    color: UI.textSecondary,
+    fontSize: 12,
+    marginTop: 2,
+  },
+  clearBtn: {
+    padding: 6,
+  },
   errorNotice: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(240, 200, 121, 0.10)',
-    borderRadius: 10,
-    padding: 10,
-    marginTop: 10,
+    marginTop: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+    backgroundColor: 'rgba(240, 200, 121, 0.08)',
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: 'rgba(240, 200, 121, 0.2)',
   },
   errorNoticeText: {
     color: '#F0C879',
@@ -360,117 +487,78 @@ const styles = StyleSheet.create({
     lineHeight: 16,
   },
   resultsList: {
-    marginTop: 10,
-    borderRadius: 12,
-    backgroundColor: '#0F1512',
+    marginTop: 8,
+    backgroundColor: 'rgba(10, 14, 12, 0.95)',
+    borderRadius: 10,
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.10)',
+    borderColor: 'rgba(255, 255, 255, 0.1)',
     overflow: 'hidden',
   },
   resultItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 10,
     paddingHorizontal: 12,
+    paddingVertical: 10,
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: 'rgba(255, 255, 255, 0.08)',
+    borderBottomColor: 'rgba(255, 255, 255, 0.06)',
   },
   resultName: {
-    color: Colors.text,
-    fontSize: 13.5,
+    color: '#FFFFFF',
+    fontSize: 13,
     fontWeight: '600',
-    marginBottom: 2,
   },
   resultSub: {
     color: UI.textMuted,
-    fontSize: 11.5,
-  },
-  selectedDestCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(99, 230, 164, 0.08)',
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: 'rgba(99, 230, 164, 0.32)',
-    paddingVertical: 10,
-    paddingHorizontal: 12,
-  },
-  selectedDestIcon: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    backgroundColor: 'rgba(99, 230, 164, 0.16)',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: 10,
-  },
-  selectedDestInfo: {
-    flex: 1,
-  },
-  selectedDestName: {
-    color: Colors.text,
-    fontSize: 14,
-    fontWeight: '700',
-    marginBottom: 2,
-  },
-  selectedDestSub: {
-    color: Colors.primary,
-    fontSize: 11.5,
-  },
-  clearBtn: {
-    padding: 6,
+    fontSize: 11,
+    marginTop: 2,
   },
   manualMinutesRow: {
-    marginTop: 12,
+    marginTop: 10,
   },
   manualInputBlock: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    backgroundColor: '#0F1512',
-    borderRadius: 12,
+    backgroundColor: 'rgba(255, 255, 255, 0.03)',
+    borderRadius: 8,
+    padding: 10,
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.10)',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
+    borderColor: 'rgba(255, 255, 255, 0.06)',
   },
   manualLabel: {
     color: UI.textSecondary,
-    fontSize: 12.5,
-    flex: 1,
+    fontSize: 12,
+    marginBottom: 6,
   },
   manualInput: {
-    width: 72,
-    height: 34,
-    backgroundColor: 'rgba(255, 255, 255, 0.06)',
-    borderRadius: 8,
+    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+    borderRadius: 6,
     color: '#FFFFFF',
     fontSize: 14,
-    fontWeight: '600',
-    textAlign: 'center',
-    paddingVertical: 0,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.08)',
   },
   wordsEchoBox: {
     marginTop: 8,
-    paddingHorizontal: 6,
-  },
-  wordsEchoText: {
-    color: Colors.primary,
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  warningBox: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(240, 200, 121, 0.08)',
-    borderRadius: 8,
     paddingHorizontal: 10,
     paddingVertical: 6,
-    marginTop: 8,
+    backgroundColor: 'rgba(52, 211, 153, 0.08)',
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: 'rgba(52, 211, 153, 0.2)',
   },
-  warningText: {
+  wordsEchoText: {
+    color: '#34D399',
+    fontSize: 12,
+    fontWeight: '500',
+  },
+  implausibleWarning: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 4,
+  },
+  implausibleWarningText: {
     color: '#F0C879',
-    fontSize: 11.5,
+    fontSize: 11,
     flex: 1,
   },
 });

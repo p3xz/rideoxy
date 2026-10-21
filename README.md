@@ -15,12 +15,12 @@ Rideoxy is a high-performance mobile application engineered for motorcyclists. T
 - **📊 Ride Analytics & Records**: Comprehensive lifetime telemetry, monthly ride summaries, personal records (longest ride, highest average speed, top speed), and complete session history.
 - **📁 GPX Route Export**: Export any recorded motorcycle trip to standard `.gpx` files through the operating system share sheet for use in Garmin, Strava, or Google Earth.
 - **🛡️ Interrupted Ride Recovery**: Automatic crash and interruption recovery on app launch, allowing riders to resume or safely save in-progress sessions.
-- **🔒 100% Local & Private**: All ride data, trackpoints, and fuel records are stored strictly in your device's local SQLite database (`rideoxy.db` with seamless backward-compatible migration from the app's earlier database file).
+- **🎯 Destination Mode & Route Pace**: Optional destination mode with upfront ETA routing via Ola Maps (primary) or OpenStreetMap Nominatim/OSRM (fallback), manual expected minutes fallback, and post-ride Route Pace delta comparisons.
+- **🔒 100% Local & Private**: Free rides send zero network requests. All ride data, trackpoints, and fuel records are stored strictly in your device's local SQLite database (`rideoxy.db` with seamless backward-compatible migration from the app's earlier database file).
 
 ### Planned Features (Intentionally Out of Scope for V1)
 - Lean-angle gyroscope analysis
 - Maintenance reminders and service scheduling
-- Route pace comparison screens
 
 ---
 
@@ -68,6 +68,34 @@ Rideoxy is a high-performance mobile application engineered for motorcyclists. T
 
 > [!IMPORTANT]
 > **Expo Go Notice**: Rideoxy uses native modules for background location tasks and `@maplibre/maplibre-react-native` vector mapping. Because of these native dependencies, **the app cannot run inside Expo Go**. It must be run using a development build (`npx expo run:ios` or `npx expo run:android`) or a standalone build.
+
+---
+
+## ⚙️ Configuration & API Keys
+
+### Ola Maps API Key (Optional)
+
+Rideoxy uses [Ola Maps](https://maps.olacabs.com/) for fast autocomplete search and high-accuracy motorcycle routing when planning a Destination ride. If no API key is provided, the app automatically falls back to OpenStreetMap (Nominatim & OSRM) or manual rider estimates.
+
+1. **Local Development**:
+   - Copy `.env.example` to `.env` in the project root:
+     ```bash
+     cp .env.example .env
+     ```
+   - Set your API key:
+     ```env
+     EXPO_PUBLIC_OLA_MAPS_API_KEY=your_actual_key_here
+     ```
+
+2. **GitHub Actions CI / Sideload Builds**:
+   - Add a repository secret named `OLA_MAPS_API_KEY` under **Settings** > **Secrets and variables** > **Actions**.
+   - The iOS workflow automatically maps this secret to `EXPO_PUBLIC_OLA_MAPS_API_KEY` during build time.
+
+> [!WARNING]
+> **Client-Side Key Visibility Notice**: Environment variables prefixed with `EXPO_PUBLIC_*` are bundled into client-side JavaScript and are extractable from application binaries.
+> - Restrict your key within the [Ola Maps Developer Console](https://maps.olacabs.com/) (by API scope, IP, or rate limits).
+> - Do not attach a billing card with automatic reload, or operate on the free usage tier with a zero balance limit.
+> - Free ride mode never accesses or transmits the key or any network requests.
 
 ---
 

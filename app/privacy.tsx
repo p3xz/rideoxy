@@ -120,7 +120,7 @@ export default function PrivacyPolicyScreen() {
             Free Ride mode sends nothing over the network. Zero data is sent during or after the ride.
           </Text>
           <Text style={styles.paragraph}>
-            Destination mode sends only your destination name to OpenStreetMap Nominatim for geocoding, and two coordinate pairs (start and destination) to OSRM to estimate travel time at ride start. Nothing is sent during or after the ride.
+            Destination mode sends the search text (while typing, to Ola Maps when enabled), the chosen destination, and the start and destination coordinates, to Ola Maps, and to Nominatim and OSRM when the fallback is used. Free Ride sends nothing, and nothing is sent during or after the ride.
           </Text>
         </View>
 

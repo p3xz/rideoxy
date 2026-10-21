@@ -1,7 +1,7 @@
 export type RideStatus = 'idle' | 'starting' | 'running' | 'paused' | 'finishing' | 'completed' | 'interrupted';
 
 export type RideMode = 'free' | 'destination';
-export type EstimateSource = 'osrm' | 'manual';
+export type EstimateSource = 'ola' | 'osrm' | 'manual';
 
 export interface Ride {
   id: string;
