@@ -1,0 +1,56 @@
+name: Android APK Build
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build-apk:
+    name: Build Installable APK
+    runs-on: ubuntu-latest
+    env:
+      EXPO_PUBLIC_OLA_MAPS_API_KEY: ${{ secrets.OLA_MAPS_API_KEY }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js LTS
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Setup Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Expo Prebuild (Android)
+        run: npx expo prebuild --platform android
+
+      - name: Generate throwaway signing key
+        run: |
+          keytool -genkeypair -v \
+            -keystore $RUNNER_TEMP/rideoxy-test.keystore \
+            -alias rideoxy-test -keyalg RSA -keysize 2048 -validity 3650 \
+            -storepass rideoxytest -keypass rideoxytest \
+            -dname "CN=Rideoxy Test, OU=Dev, O=Rideoxy, L=Greater Noida, ST=UP, C=IN"
+
+      - name: Build Release APK
+        working-directory: android
+        run: |
+          ./gradlew assembleRelease \
+            -Pandroid.injected.signing.store.file=$RUNNER_TEMP/rideoxy-test.keystore \
+            -Pandroid.injected.signing.store.password=rideoxytest \
+            -Pandroid.injected.signing.key.alias=rideoxy-test \
+            -Pandroid.injected.signing.key.password=rideoxytest
+
+      - name: Upload APK Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Rideoxy-android-apk
+          path: android/app/build/outputs/apk/release/*.apk
+          if-no-files-found: error
