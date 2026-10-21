@@ -5,6 +5,7 @@ import {
   CREATE_SETTINGS_TABLE,
   CREATE_FUEL_LOGS_TABLE,
   CREATE_MOTORCYCLES_TABLE,
+  CREATE_SAVED_DESTINATIONS_TABLE,
   CREATE_INDEXES,
 } from './schema';
 
@@ -73,6 +74,7 @@ async function initDatabase(db: SQLite.SQLiteDatabase): Promise<void> {
   await db.execAsync(CREATE_MOTORCYCLES_TABLE);
   await ensureMotorcyclesPhotoUriColumn(db);
   await ensureRidesEtaColumns(db);
+  await ensureSavedDestinationsTable(db);
   await db.execAsync(CREATE_INDEXES);
   console.log('[Rideoxy] [DB] Tables and indexes ready');
 }
@@ -160,6 +162,22 @@ function ensureRidesEtaColumnsSync(db: SQLite.SQLiteDatabase): void {
   }
 }
 
+async function ensureSavedDestinationsTable(db: SQLite.SQLiteDatabase): Promise<void> {
+  try {
+    await db.execAsync(CREATE_SAVED_DESTINATIONS_TABLE);
+  } catch (err) {
+    console.warn('[Rideoxy] [DB] ensureSavedDestinationsTable notice:', err);
+  }
+}
+
+function ensureSavedDestinationsTableSync(db: SQLite.SQLiteDatabase): void {
+  try {
+    db.execSync(CREATE_SAVED_DESTINATIONS_TABLE);
+  } catch (err) {
+    console.warn('[Rideoxy] [DB] ensureSavedDestinationsTableSync notice:', err);
+  }
+}
+
 function initDatabaseSync(db: SQLite.SQLiteDatabase): void {
   db.execSync('PRAGMA journal_mode = WAL;');
   db.execSync('PRAGMA foreign_keys = ON;');
@@ -170,6 +188,7 @@ function initDatabaseSync(db: SQLite.SQLiteDatabase): void {
   db.execSync(CREATE_FUEL_LOGS_TABLE);
   db.execSync(CREATE_MOTORCYCLES_TABLE);
   ensureRidesEtaColumnsSync(db);
+  ensureSavedDestinationsTableSync(db);
   db.execSync(CREATE_INDEXES);
 }
 

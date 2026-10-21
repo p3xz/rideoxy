@@ -36,7 +36,7 @@ export interface GeocodeResult {
   state?: string;
   lat: number;
   lng: number;
-  source?: 'nominatim' | 'pin';
+  source?: 'nominatim' | 'pin' | 'saved';
 }
 
 export type GeocodeErrorType =

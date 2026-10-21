@@ -1,7 +1,8 @@
 import React from 'react';
 import { StyleSheet, View, Text } from 'react-native';
 import { Colors } from '../constants/theme';
-import { formatDistance, formatDuration, formatStopwatch, formatSpeed } from '../services/distance';
+import { UI } from '../constants/ui';
+import { formatDistance, formatDuration, formatStopwatch } from '../services/distance';
 
 interface RideStatsProps {
   distanceKm: number;
@@ -11,6 +12,7 @@ interface RideStatsProps {
   maxSpeedKmh: number;
   unit?: 'km' | 'mi';
   mode?: 'active' | 'summary';
+  distanceToDestinationKm?: number | null;
 }
 
 export const RideStats: React.FC<RideStatsProps> = ({
@@ -21,98 +23,113 @@ export const RideStats: React.FC<RideStatsProps> = ({
   maxSpeedKmh,
   unit = 'km',
   mode = 'active',
+  distanceToDestinationKm,
 }) => {
   const speedUnit = unit === 'mi' ? 'mph' : 'km/h';
+  const speedMultiplier = unit === 'mi' ? 0.621371 : 1;
 
+  const displayAvgSpeed = Math.round((avgSpeedKmh || 0) * speedMultiplier);
+  const displayMaxSpeed = Math.round((maxSpeedKmh || 0) * speedMultiplier);
+
+  // Active Mode (2x2 Grid for Live Ride screen)
   if (mode === 'active') {
     return (
-      <View style={styles.activeInstrumentPanel}>
+      <View style={styles.activeContainer}>
+        {/* Row 1: Distance & Duration */}
         <View style={styles.activeRow}>
-          {/* Distance */}
-          <View style={styles.activeCol}>
+          <View style={styles.activeCell}>
             <Text style={styles.activeLabel}>DISTANCE</Text>
-            <View style={styles.activeValueRow}>
-              <Text style={styles.activeValue}>{formatDistance(distanceKm, unit).split(' ')[0]}</Text>
-              <Text style={styles.activeUnit}>{unit.toUpperCase()}</Text>
+            <View style={styles.activeValueInline}>
+              <Text style={styles.activeValue}>
+                {formatDistance(distanceKm, unit)}
+              </Text>
             </View>
           </View>
 
-          <View style={styles.activeDividerVert} />
-
-          {/* Duration */}
-          <View style={styles.activeCol}>
+          <View style={styles.activeCell}>
             <Text style={styles.activeLabel}>DURATION</Text>
-            <Text style={styles.activeValue}>{formatStopwatch(durationSeconds)}</Text>
+            <Text style={styles.activeValue}>
+              {formatStopwatch(durationSeconds)}
+            </Text>
           </View>
         </View>
 
-        <View style={styles.activeDividerHoriz} />
-
+        {/* Row 2: Avg Speed & Max Speed */}
         <View style={styles.activeRow}>
-          {/* Avg Speed */}
-          <View style={styles.activeCol}>
+          <View style={styles.activeCell}>
             <Text style={styles.activeLabel}>AVG SPEED</Text>
-            <View style={styles.activeValueRow}>
-              <Text style={styles.activeValue}>{Math.round(avgSpeedKmh)}</Text>
-              <Text style={styles.activeUnit}>{speedUnit.toUpperCase()}</Text>
+            <View style={styles.activeValueInline}>
+              <Text style={styles.activeValue}>{displayAvgSpeed}</Text>
+              <Text style={styles.activeUnit}>{speedUnit}</Text>
             </View>
           </View>
 
-          <View style={styles.activeDividerVert} />
-
-          {/* Max Speed */}
-          <View style={styles.activeCol}>
+          <View style={styles.activeCell}>
             <Text style={styles.activeLabel}>MAX SPEED</Text>
-            <View style={styles.activeValueRow}>
-              <Text style={styles.activeValue}>{Math.round(maxSpeedKmh)}</Text>
-              <Text style={styles.activeUnit}>{speedUnit.toUpperCase()}</Text>
+            <View style={styles.activeValueInline}>
+              <Text style={styles.activeValue}>{displayMaxSpeed}</Text>
+              <Text style={styles.activeUnit}>{speedUnit}</Text>
             </View>
           </View>
         </View>
+
+        {/* Destination Ride: Optional straight-line distance to destination */}
+        {distanceToDestinationKm !== undefined && distanceToDestinationKm !== null && (
+          <View style={styles.destinationRemainingRow}>
+            <Text style={styles.destinationRemainingText} numberOfLines={1}>
+              {formatDistance(distanceToDestinationKm, unit)} to destination
+            </Text>
+          </View>
+        )}
       </View>
     );
   }
 
-  // Summary / Detail Mode
+  // Summary / Detail Mode (Card format for Ride Summary & Telemetry)
   return (
-    <View style={styles.summaryContainer}>
-      <View style={styles.summaryRow}>
-        <View style={styles.summaryItem}>
+    <View style={styles.summaryCard}>
+      {/* Top Row: Total Distance & Total Duration */}
+      <View style={styles.summaryTopRow}>
+        <View style={styles.summaryTopItem}>
           <Text style={styles.summaryLabel}>TOTAL DISTANCE</Text>
-          <Text style={styles.summaryPrimaryValue}>{formatDistance(distanceKm, unit)}</Text>
+          <Text style={styles.summaryPrimaryValue}>
+            {formatDistance(distanceKm, unit)}
+          </Text>
         </View>
 
-        <View style={styles.summaryDividerVert} />
-
-        <View style={styles.summaryItem}>
+        <View style={styles.summaryTopItem}>
           <Text style={styles.summaryLabel}>TOTAL DURATION</Text>
-          <Text style={styles.summaryPrimaryValue}>{formatDuration(durationSeconds)}</Text>
+          <Text style={styles.summaryPrimaryValue}>
+            {formatDuration(durationSeconds)}
+          </Text>
         </View>
       </View>
 
-      <View style={styles.summaryDividerHoriz} />
+      <View style={styles.summaryDivider} />
 
-      <View style={styles.summaryThreeCol}>
-        {movingTimeSeconds !== undefined && (
-          <>
-            <View style={styles.colItem}>
-              <Text style={styles.colLabel}>MOVING TIME</Text>
-              <Text style={styles.colValue}>{formatDuration(movingTimeSeconds)}</Text>
-            </View>
-            <View style={styles.colDivider} />
-          </>
-        )}
-
-        <View style={styles.colItem}>
-          <Text style={styles.colLabel}>AVG SPEED</Text>
-          <Text style={styles.colValue}>{formatSpeed(avgSpeedKmh, unit)}</Text>
+      {/* Bottom Row: Moving Time, Avg Speed, Top Speed */}
+      <View style={styles.summaryBottomRow}>
+        <View style={styles.summaryBottomItem}>
+          <Text style={styles.summarySubLabel}>MOVING TIME</Text>
+          <Text style={styles.summarySecondaryValue}>
+            {movingTimeSeconds !== undefined && movingTimeSeconds !== null
+              ? formatDuration(movingTimeSeconds)
+              : '--'}
+          </Text>
         </View>
 
-        <View style={styles.colDivider} />
+        <View style={styles.summaryBottomItem}>
+          <Text style={styles.summarySubLabel}>AVG SPEED</Text>
+          <Text style={styles.summarySecondaryValue}>
+            {displayAvgSpeed} {speedUnit}
+          </Text>
+        </View>
 
-        <View style={styles.colItem}>
-          <Text style={styles.colLabel}>TOP SPEED</Text>
-          <Text style={styles.colValue}>{formatSpeed(maxSpeedKmh, unit)}</Text>
+        <View style={styles.summaryBottomItem}>
+          <Text style={styles.summarySubLabel}>TOP SPEED</Text>
+          <Text style={styles.summarySecondaryValue}>
+            {displayMaxSpeed} {speedUnit}
+          </Text>
         </View>
       </View>
     </View>
@@ -120,125 +137,115 @@ export const RideStats: React.FC<RideStatsProps> = ({
 };
 
 const styles = StyleSheet.create({
-  activeInstrumentPanel: {
-    backgroundColor: Colors.surface,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: Colors.surfaceBorder,
-    paddingVertical: 10,
+  // Active HUD Layout
+  activeContainer: {
+    gap: 14,
     paddingHorizontal: 12,
   },
   activeRow: {
     flexDirection: 'row',
-    alignItems: 'center',
     justifyContent: 'space-between',
-    paddingVertical: 6,
+    alignItems: 'flex-start',
   },
-  activeCol: {
+  activeCell: {
     flex: 1,
-    paddingHorizontal: 6,
   },
   activeLabel: {
-    color: Colors.textMuted,
-    fontSize: 9,
-    fontWeight: '800',
-    letterSpacing: 1,
-    marginBottom: 3,
+    color: '#6B7280',
+    fontSize: 10,
+    fontWeight: '700',
+    letterSpacing: 1.2,
+    marginBottom: 4,
+    textTransform: 'uppercase',
   },
-  activeValueRow: {
+  activeValueInline: {
     flexDirection: 'row',
     alignItems: 'baseline',
     gap: 4,
   },
   activeValue: {
-    color: Colors.text,
+    color: '#FFFFFF',
     fontSize: 22,
-    fontWeight: '900',
+    fontWeight: '800',
     fontVariant: ['tabular-nums'],
     letterSpacing: -0.5,
   },
   activeUnit: {
-    color: Colors.textSecondary,
-    fontSize: 11,
-    fontWeight: '700',
-    letterSpacing: 0.3,
-    textTransform: 'lowercase',
+    color: '#9CA3AF',
+    fontSize: 13,
+    fontWeight: '600',
   },
-  activeDividerVert: {
-    width: 1,
-    height: 32,
-    backgroundColor: Colors.surfaceBorder,
-  },
-  activeDividerHoriz: {
-    height: 1,
-    backgroundColor: Colors.surfaceBorder,
-    marginVertical: 4,
-  },
-  summaryContainer: {
-    backgroundColor: Colors.surface,
-    borderRadius: 12,
-    padding: 16,
+  destinationRemainingRow: {
+    backgroundColor: 'rgba(52, 211, 153, 0.08)',
+    borderRadius: 8,
     borderWidth: 1,
-    borderColor: Colors.surfaceBorder,
-  },
-  summaryRow: {
-    flexDirection: 'row',
+    borderColor: 'rgba(52, 211, 153, 0.2)',
+    paddingVertical: 6,
+    paddingHorizontal: 10,
     alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 2,
+  },
+  destinationRemainingText: {
+    color: '#34D399',
+    fontSize: 12,
+    fontWeight: '600',
+    letterSpacing: 0.3,
+  },
+
+  // Summary Card Layout
+  summaryCard: {
+    backgroundColor: 'rgba(255, 255, 255, 0.04)',
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.08)',
+    padding: 18,
+    gap: 14,
+  },
+  summaryTopRow: {
+    flexDirection: 'row',
     justifyContent: 'space-between',
   },
-  summaryItem: {
+  summaryTopItem: {
     flex: 1,
   },
   summaryLabel: {
-    color: Colors.textMuted,
-    fontSize: 9,
-    fontWeight: '800',
-    letterSpacing: 1,
-    marginBottom: 4,
+    color: '#9CA3AF',
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 0.8,
+    marginBottom: 6,
+    textTransform: 'uppercase',
   },
   summaryPrimaryValue: {
-    color: Colors.text,
-    fontSize: 26,
-    fontWeight: '900',
+    color: '#FFFFFF',
+    fontSize: 24,
+    fontWeight: '800',
     letterSpacing: -0.5,
-    fontVariant: ['tabular-nums'],
   },
-  summaryDividerVert: {
-    width: 1,
-    height: 38,
-    backgroundColor: Colors.surfaceBorder,
-    marginHorizontal: 12,
-  },
-  summaryDividerHoriz: {
+  summaryDivider: {
     height: 1,
-    backgroundColor: Colors.surfaceBorder,
-    marginVertical: 14,
+    backgroundColor: 'rgba(255, 255, 255, 0.07)',
   },
-  summaryThreeCol: {
+  summaryBottomRow: {
     flexDirection: 'row',
-    alignItems: 'center',
     justifyContent: 'space-between',
   },
-  colItem: {
+  summaryBottomItem: {
     flex: 1,
   },
-  colLabel: {
-    color: Colors.textMuted,
-    fontSize: 8,
-    fontWeight: '800',
-    letterSpacing: 0.8,
-    marginBottom: 2,
+  summarySubLabel: {
+    color: '#6B7280',
+    fontSize: 10,
+    fontWeight: '700',
+    letterSpacing: 0.6,
+    marginBottom: 4,
+    textTransform: 'uppercase',
   },
-  colValue: {
-    color: Colors.text,
-    fontSize: 14,
-    fontWeight: '800',
-    fontVariant: ['tabular-nums'],
-  },
-  colDivider: {
-    width: 1,
-    height: 24,
-    backgroundColor: Colors.surfaceBorder,
-    marginHorizontal: 8,
+  summarySecondaryValue: {
+    color: '#FFFFFF',
+    fontSize: 15,
+    fontWeight: '700',
+    letterSpacing: -0.2,
   },
 });

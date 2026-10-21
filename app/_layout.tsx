@@ -17,6 +17,33 @@ import '../tasks/locationTask';
 // Prevent native splash screen from auto-hiding before animated splash mounts
 SplashScreen.preventAutoHideAsync().catch(() => {});
 
+// Ensure any keep-awake calls are failure-silent if the native module is absent (e.g., in Expo Go)
+try {
+  const KeepAwake = require('expo-keep-awake');
+  if (KeepAwake) {
+    if (typeof KeepAwake.activateKeepAwakeAsync === 'function') {
+      const origActivate = KeepAwake.activateKeepAwakeAsync;
+      KeepAwake.activateKeepAwakeAsync = async (...args: any[]) => {
+        try {
+          return await origActivate(...args);
+        } catch {
+          // Failure-silent
+        }
+      };
+    }
+    if (typeof KeepAwake.deactivateKeepAwake === 'function') {
+      const origDeactivate = KeepAwake.deactivateKeepAwake;
+      KeepAwake.deactivateKeepAwake = async (...args: any[]) => {
+        try {
+          return await origDeactivate(...args);
+        } catch {
+          // Failure-silent
+        }
+      };
+    }
+  }
+} catch {}
+
 export default function RootLayout() {
   const router = useRouter();
   const { isSplashFinished, progress, interruptedRide, onSplashFinished } = useAppReady();

@@ -6,6 +6,7 @@ import {
   ScrollView,
   TouchableOpacity,
   Alert,
+  Platform,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -16,8 +17,10 @@ import { RoutePaceSummary } from '../components/RoutePaceSummary';
 import { trackingService } from '../services/tracking';
 import { deleteRide } from '../database/rideRepository';
 import { getTrackPointsByRideId } from '../database/trackPointRepository';
+import { exportRideToGPX } from '../services/gpxExport';
+import { hapticFeedback } from '../services/haptics';
 import { Ride } from '../types/ride';
-import { Check, Trash2 } from 'lucide-react-native';
+import { ChevronLeft, Share2, Check, Trash2 } from 'lucide-react-native';
 
 export default function RideSummaryScreen() {
   const router = useRouter();
@@ -40,20 +43,29 @@ export default function RideSummaryScreen() {
   }, [completedRide]);
 
   const handleSaveAndDone = () => {
+    hapticFeedback.success();
     trackingService.resetToIdle();
     router.replace('/(tabs)/history');
   };
 
+  const handleShare = async () => {
+    if (!completedRide) return;
+    hapticFeedback.light();
+    await exportRideToGPX(completedRide);
+  };
+
   const handleDeleteRide = () => {
+    hapticFeedback.warning();
     Alert.alert(
-      'Delete Ride',
-      'Are you sure you want to discard and delete this recorded motorcycle ride?',
+      'Discard Ride',
+      'Are you sure you want to discard and delete this recorded motorcycle ride session?',
       [
         { text: 'Keep Ride', style: 'cancel' },
         {
-          text: 'Delete',
+          text: 'Discard',
           style: 'destructive',
           onPress: async () => {
+            hapticFeedback.heavy();
             if (completedRide) {
               await deleteRide(completedRide.id);
             }
@@ -73,6 +85,7 @@ export default function RideSummaryScreen() {
           <TouchableOpacity
             style={styles.backHomeBtn}
             onPress={() => router.replace('/(tabs)')}
+            accessibilityRole="button"
           >
             <Text style={styles.backHomeText}>Return to Home</Text>
           </TouchableOpacity>
@@ -83,15 +96,42 @@ export default function RideSummaryScreen() {
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['top', 'left', 'right', 'bottom']}>
+      {/* Top Header Bar */}
+      <View style={styles.headerBar}>
+        <TouchableOpacity
+          onPress={handleSaveAndDone}
+          style={styles.headerBtn}
+          activeOpacity={0.7}
+          accessibilityRole="button"
+          accessibilityLabel="Back to history"
+        >
+          <ChevronLeft size={22} color="#F3F6F3" />
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          onPress={handleShare}
+          style={styles.headerBtn}
+          activeOpacity={0.7}
+          accessibilityRole="button"
+          accessibilityLabel="Share ride"
+        >
+          <Share2 size={18} color="#F3F6F3" />
+        </TouchableOpacity>
+      </View>
+
       <ScrollView
         style={styles.scrollView}
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
       >
-        {/* Header */}
-        <View style={styles.header}>
-          <Text style={styles.headerSubtitle}>SESSION FINISHED</Text>
-          <Text style={styles.headerTitle}>RIDE SUMMARY</Text>
+        {/* Title Section */}
+        <View style={styles.titleSection}>
+          <Text style={styles.eyebrow} maxFontSizeMultiplier={1.2}>
+            RIDE COMPLETED
+          </Text>
+          <Text style={styles.title} maxFontSizeMultiplier={1.3}>
+            RIDE SUMMARY
+          </Text>
         </View>
 
         {/* Route Map Card */}
@@ -120,7 +160,7 @@ export default function RideSummaryScreen() {
           />
         )}
 
-        {/* Detailed Stats */}
+        {/* Metrics Card */}
         <View style={styles.statsContainer}>
           <RideStats
             distanceKm={completedRide.distance}
@@ -132,24 +172,32 @@ export default function RideSummaryScreen() {
           />
         </View>
 
-        {/* Actions */}
+        {/* Primary and Secondary Actions */}
         <View style={styles.actionsContainer}>
           <TouchableOpacity
             style={styles.saveBtn}
             onPress={handleSaveAndDone}
             activeOpacity={0.85}
+            accessibilityRole="button"
+            accessibilityLabel="Save ride to journal"
           >
-            <Check size={18} color="#0C0E12" strokeWidth={2.8} />
-            <Text style={styles.saveBtnText}>SAVE TO JOURNAL</Text>
+            <Check size={20} color="#060A08" strokeWidth={2.8} />
+            <Text style={styles.saveBtnText} maxFontSizeMultiplier={1.2}>
+              Save to Journal
+            </Text>
           </TouchableOpacity>
 
           <TouchableOpacity
-            style={styles.deleteBtn}
+            style={styles.discardBtn}
             onPress={handleDeleteRide}
-            activeOpacity={0.8}
+            activeOpacity={0.7}
+            accessibilityRole="button"
+            accessibilityLabel="Discard this ride"
           >
-            <Trash2 size={16} color={Colors.danger} />
-            <Text style={styles.deleteBtnText}>DISCARD RIDE</Text>
+            <Trash2 size={16} color="#EF4444" />
+            <Text style={styles.discardBtnText} maxFontSizeMultiplier={1.2}>
+              Discard Ride
+            </Text>
           </TouchableOpacity>
         </View>
       </ScrollView>
@@ -160,74 +208,102 @@ export default function RideSummaryScreen() {
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: Colors.background,
+    backgroundColor: '#070909',
+  },
+  headerBar: {
+    height: 48,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    zIndex: 10,
+  },
+  headerBtn: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: 'rgba(255, 255, 255, 0.08)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.10)',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   scrollView: {
     flex: 1,
   },
   scrollContent: {
-    paddingHorizontal: 16,
-    paddingTop: 12,
-    paddingBottom: 32,
+    paddingHorizontal: 18,
+    paddingTop: 8,
+    paddingBottom: 36,
   },
-  header: {
-    marginBottom: 14,
+  titleSection: {
+    marginBottom: 16,
   },
-  headerSubtitle: {
-    color: Colors.primary,
-    fontSize: 10,
+  eyebrow: {
+    color: '#34D399',
+    fontSize: 11,
     fontWeight: '800',
     letterSpacing: 1.2,
-    marginBottom: 2,
+    marginBottom: 4,
   },
-  headerTitle: {
-    color: Colors.text,
-    fontSize: 24,
+  title: {
+    color: '#FFFFFF',
+    fontSize: 26,
     fontWeight: '900',
-    letterSpacing: -0.5,
+    letterSpacing: -0.6,
   },
   mapCard: {
-    borderRadius: 12,
+    borderRadius: 18,
     overflow: 'hidden',
     borderWidth: 1,
-    borderColor: Colors.surfaceBorder,
-    marginBottom: 14,
+    borderColor: 'rgba(255, 255, 255, 0.08)',
+    marginBottom: 16,
   },
   statsContainer: {
-    marginBottom: 18,
+    marginBottom: 16,
   },
   actionsContainer: {
-    gap: 10,
+    gap: 12,
+    marginTop: 4,
   },
   saveBtn: {
-    height: 52,
-    backgroundColor: Colors.primary,
-    borderRadius: 12,
+    height: 54,
+    backgroundColor: '#34D399',
+    borderRadius: 27,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 8,
+    ...Platform.select({
+      ios: {
+        shadowColor: '#34D399',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.35,
+        shadowRadius: 10,
+      },
+      android: {
+        elevation: 6,
+      },
+    }),
   },
   saveBtnText: {
-    color: '#0C0E12',
-    fontSize: 15,
+    color: '#060A08',
+    fontSize: 16,
     fontWeight: '900',
-    letterSpacing: 0.5,
+    letterSpacing: 0.3,
   },
-  deleteBtn: {
+  discardBtn: {
     height: 44,
-    backgroundColor: 'transparent',
-    borderRadius: 12,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 6,
   },
-  deleteBtnText: {
-    color: Colors.danger,
+  discardBtnText: {
+    color: '#EF4444',
     fontSize: 13,
     fontWeight: '800',
-    letterSpacing: 0.5,
+    letterSpacing: 0.4,
   },
   centerContainer: {
     flex: 1,
@@ -236,20 +312,20 @@ const styles = StyleSheet.create({
     padding: 24,
   },
   noRideText: {
-    color: Colors.textSecondary,
+    color: '#9CA3AF',
     fontSize: 15,
     marginBottom: 14,
   },
   backHomeBtn: {
-    paddingHorizontal: 16,
+    paddingHorizontal: 18,
     paddingVertical: 10,
-    backgroundColor: Colors.surface,
-    borderRadius: 8,
+    backgroundColor: 'rgba(255, 255, 255, 0.08)',
+    borderRadius: 10,
     borderWidth: 1,
-    borderColor: Colors.surfaceBorder,
+    borderColor: 'rgba(255, 255, 255, 0.12)',
   },
   backHomeText: {
-    color: Colors.primary,
+    color: '#34D399',
     fontWeight: '800',
     fontSize: 13,
   },

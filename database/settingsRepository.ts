@@ -25,3 +25,14 @@ export async function getBikeName(): Promise<string> {
 export async function setBikeName(name: string): Promise<void> {
   await setSetting('bike_name', name.trim());
 }
+
+export const EXPERIMENTAL_FEATURES_KEY = 'experimental_features_enabled';
+
+export async function isExperimentalEnabled(): Promise<boolean> {
+  const val = await getSetting(EXPERIMENTAL_FEATURES_KEY);
+  return val === 'true';
+}
+
+export async function setExperimentalEnabled(enabled: boolean): Promise<void> {
+  await setSetting(EXPERIMENTAL_FEATURES_KEY, enabled ? 'true' : 'false');
+}

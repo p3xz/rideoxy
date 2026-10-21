@@ -6,10 +6,12 @@ import {
   TouchableOpacity,
   Alert,
   BackHandler,
+  Platform,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Colors } from '../constants/theme';
+import { UI } from '../constants/ui';
 import { RideMap } from '../components/RideMap';
 import { SpeedDisplay } from '../components/SpeedDisplay';
 import { RideStats } from '../components/RideStats';
@@ -18,11 +20,12 @@ import { trackingService } from '../services/tracking';
 import { LiveTrackingState } from '../types/tracking';
 import { hapticFeedback } from '../services/haptics';
 import {
-  ChevronLeft,
+  ChevronDown,
   Pause,
   Play,
   Square,
   Radio,
+  Navigation as NavigationIcon,
 } from 'lucide-react-native';
 
 export default function ActiveRideScreen() {
@@ -30,6 +33,7 @@ export default function ActiveRideScreen() {
   const [trackingState, setTrackingState] = useState<LiveTrackingState>(
     trackingService.getState()
   );
+  const [recenterCounter, setRecenterCounter] = useState(0);
 
   useEffect(() => {
     const unsubscribe = trackingService.subscribe((state) => {
@@ -104,45 +108,52 @@ export default function ActiveRideScreen() {
     );
   };
 
+  const handleRecenter = () => {
+    hapticFeedback.light();
+    setRecenterCounter((c) => c + 1);
+  };
+
   const isPaused = trackingState.status === 'paused';
 
   return (
-    <SafeAreaView style={styles.safeArea} edges={['top', 'left', 'right', 'bottom']}>
-      {/* Top Cockpit Header */}
+    <SafeAreaView style={styles.safeArea} edges={['top', 'left', 'right']}>
+      {/* Top Floating Cockpit Header */}
       <View style={styles.header}>
         <TouchableOpacity
           onPress={handleBackPress}
-          style={styles.backBtn}
+          style={styles.collapseBtn}
           activeOpacity={0.7}
           hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          accessibilityRole="button"
+          accessibilityLabel="Minimize live ride view"
         >
-          <ChevronLeft size={22} color={Colors.text} />
+          <ChevronDown size={20} color="#F3F6F3" strokeWidth={2.4} />
         </TouchableOpacity>
 
-        <View style={styles.statusBadgeContainer}>
+        <View style={styles.statusPill}>
           <View
             style={[
               styles.statusDot,
-              { backgroundColor: isPaused ? Colors.warning : Colors.primary },
+              { backgroundColor: isPaused ? '#F59E0B' : '#34D399' },
             ]}
           />
-          <Text style={styles.statusText}>
+          <Text style={styles.statusText} maxFontSizeMultiplier={1.2}>
             {isPaused ? 'RIDE PAUSED' : 'RECORDING'}
           </Text>
         </View>
 
-        <View style={styles.gpsBadge}>
+        <View style={styles.gpsPill}>
           <Radio
-            size={13}
+            size={12}
             color={
               trackingState.gpsSignalState === 'good'
-                ? Colors.primary
+                ? '#34D399'
                 : trackingState.gpsSignalState === 'poor'
-                ? Colors.warning
-                : Colors.textMuted
+                ? '#F59E0B'
+                : '#9CA3AF'
             }
           />
-          <Text style={styles.gpsText}>
+          <Text style={styles.gpsText} maxFontSizeMultiplier={1.2}>
             {trackingState.gpsSignalState === 'good'
               ? 'GPS 3D'
               : trackingState.gpsSignalState === 'poor'
@@ -152,7 +163,7 @@ export default function ActiveRideScreen() {
         </View>
       </View>
 
-      {/* Map View */}
+      {/* Map View Section */}
       <View style={styles.mapContainer}>
         <RideMap
           coordinates={trackingState.routeCoordinates}
@@ -160,72 +171,83 @@ export default function ActiveRideScreen() {
           interactive={true}
           followUser={true}
           showStartEndMarkers={true}
+          recenterTrigger={recenterCounter}
         />
+
+        {/* Floating Map Recenter Button */}
+        <TouchableOpacity
+          style={styles.recenterBtn}
+          onPress={handleRecenter}
+          activeOpacity={0.8}
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          accessibilityRole="button"
+          accessibilityLabel="Recenter map on current motorcycle position"
+        >
+          <NavigationIcon size={18} color="#34D399" />
+        </TouchableOpacity>
       </View>
 
-      {/* Live Telemetry Panel */}
-      <GlassSurface
-        variant="modal"
-        intensity={45}
-        borderRadius={20}
-        style={styles.telemetryPanel}
-      >
-        <View style={styles.telemetryInner}>
-          {/* Speed Instrument Readout */}
-          <View style={styles.speedSection}>
-            <SpeedDisplay speed={trackingState.currentSpeedKmh} size="large" />
-          </View>
+      {/* Bottom Telemetry HUD Surface */}
+      <View style={styles.telemetryPanel}>
+        {/* Speed Instrument Readout */}
+        <View style={styles.speedSection}>
+          <SpeedDisplay speed={trackingState.currentSpeedKmh} size="large" />
+        </View>
 
-          {/* Telemetry Stats Grid */}
-          <View style={styles.statsSection}>
-            <RideStats
-              distanceKm={trackingState.currentDistanceKm}
-              durationSeconds={trackingState.currentDurationSeconds}
-              avgSpeedKmh={trackingState.currentAvgSpeedKmh}
-              maxSpeedKmh={trackingState.currentMaxSpeedKmh}
-              mode="active"
-            />
-          </View>
+        {/* Telemetry Stats Grid (2x2) */}
+        <View style={styles.statsSection}>
+          <RideStats
+            distanceKm={trackingState.currentDistanceKm}
+            durationSeconds={trackingState.currentDurationSeconds}
+            avgSpeedKmh={trackingState.currentAvgSpeedKmh}
+            maxSpeedKmh={trackingState.currentMaxSpeedKmh}
+            mode="active"
+          />
+        </View>
 
-          {/* Tactile Control Buttons */}
-          <View style={styles.controlsRow}>
+        {/* Tactile Control Buttons */}
+        <View style={styles.controlsRow}>
+          {/* Pause / Resume Button */}
+          <View style={styles.controlItem}>
             <TouchableOpacity
               style={[
-                styles.controlBtn,
-                styles.pauseBtn,
-                isPaused && styles.resumeBtnActive,
+                styles.actionCircleBtn,
+                styles.pauseCircleBtn,
+                isPaused && styles.resumeCircleBtnActive,
               ]}
               onPress={handleTogglePause}
-              activeOpacity={0.85}
+              activeOpacity={0.8}
               accessibilityRole="button"
-              accessibilityLabel={isPaused ? "Resume motorcycle ride" : "Pause motorcycle ride"}
+              accessibilityLabel={isPaused ? 'Resume ride' : 'Pause ride'}
             >
               {isPaused ? (
-                <>
-                  <Play size={18} color="#070909" fill="#070909" />
-                  <Text style={styles.resumeText}>RESUME</Text>
-                </>
+                <Play size={22} color="#060A08" fill="#060A08" style={{ marginLeft: 2 }} />
               ) : (
-                <>
-                  <Pause size={18} color={Colors.text} />
-                  <Text style={styles.pauseText}>PAUSE</Text>
-                </>
+                <Pause size={22} color="#F3F6F3" />
               )}
             </TouchableOpacity>
+            <Text style={styles.controlBtnLabel} maxFontSizeMultiplier={1.2}>
+              {isPaused ? 'RESUME' : 'PAUSE'}
+            </Text>
+          </View>
 
+          {/* End Ride Button */}
+          <View style={styles.controlItem}>
             <TouchableOpacity
-              style={[styles.controlBtn, styles.endBtn]}
+              style={[styles.actionCircleBtn, styles.endCircleBtn]}
               onPress={handleEndRide}
-              activeOpacity={0.85}
+              activeOpacity={0.8}
               accessibilityRole="button"
               accessibilityLabel="Finish and save motorcycle ride"
             >
-              <Square size={16} color="#FFFFFF" fill="#FFFFFF" />
-              <Text style={styles.endText}>END RIDE</Text>
+              <Square size={20} color="#FFFFFF" fill="#FFFFFF" />
             </TouchableOpacity>
+            <Text style={[styles.controlBtnLabel, styles.endBtnLabel]} maxFontSizeMultiplier={1.2}>
+              END RIDE
+            </Text>
           </View>
         </View>
-      </GlassSurface>
+      </View>
     </SafeAreaView>
   );
 }
@@ -233,39 +255,37 @@ export default function ActiveRideScreen() {
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: Colors.background,
+    backgroundColor: '#070909',
   },
   header: {
-    height: 48,
+    height: 52,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 16,
-    backgroundColor: Colors.background,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.surfaceBorder,
+    backgroundColor: '#070909',
     zIndex: 10,
   },
-  backBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 8,
-    backgroundColor: Colors.surface,
+  collapseBtn: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: 'rgba(255, 255, 255, 0.08)',
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
-    borderColor: Colors.surfaceBorder,
+    borderColor: 'rgba(255, 255, 255, 0.10)',
   },
-  statusBadgeContainer: {
+  statusPill: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
-    backgroundColor: Colors.surface,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 6,
+    gap: 7,
+    backgroundColor: 'rgba(255, 255, 255, 0.06)',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 16,
     borderWidth: 1,
-    borderColor: Colors.surfaceBorder,
+    borderColor: 'rgba(255, 255, 255, 0.09)',
   },
   statusDot: {
     width: 7,
@@ -273,96 +293,136 @@ const styles = StyleSheet.create({
     borderRadius: 3.5,
   },
   statusText: {
-    color: Colors.text,
-    fontSize: 10,
-    fontWeight: '900',
+    color: '#F3F6F3',
+    fontSize: 11,
+    fontWeight: '800',
     letterSpacing: 0.8,
   },
-  gpsBadge: {
+  gpsPill: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
-    backgroundColor: Colors.surface,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 6,
+    gap: 5,
+    backgroundColor: 'rgba(255, 255, 255, 0.06)',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 16,
     borderWidth: 1,
-    borderColor: Colors.surfaceBorder,
+    borderColor: 'rgba(255, 255, 255, 0.09)',
   },
   gpsText: {
-    color: Colors.textMuted,
-    fontSize: 9,
-    fontWeight: '800',
+    color: '#9CA3AF',
+    fontSize: 10,
+    fontWeight: '700',
     letterSpacing: 0.5,
   },
   mapContainer: {
     flex: 1,
-    backgroundColor: Colors.surface,
+    backgroundColor: '#080A09',
+    position: 'relative',
+  },
+  recenterBtn: {
+    position: 'absolute',
+    right: 16,
+    bottom: 16,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: 'rgba(10, 14, 12, 0.92)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(52, 211, 153, 0.3)',
+    ...Platform.select({
+      ios: {
+        shadowColor: '#000000',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.4,
+        shadowRadius: 6,
+      },
+      android: {
+        elevation: 6,
+      },
+    }),
   },
   telemetryPanel: {
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
-    borderBottomLeftRadius: 0,
-    borderBottomRightRadius: 0,
-    borderLeftWidth: 0,
-    borderRightWidth: 0,
-    borderBottomWidth: 0,
-  },
-  telemetryInner: {
-    paddingHorizontal: 16,
-    paddingTop: 14,
-    paddingBottom: 16,
-    gap: 12,
+    backgroundColor: '#0A0D0C',
+    borderTopLeftRadius: 32,
+    borderTopRightRadius: 32,
+    borderTopWidth: 1,
+    borderColor: 'rgba(52, 211, 153, 0.16)',
+    paddingHorizontal: 18,
+    paddingTop: 10,
+    paddingBottom: 22,
+    ...Platform.select({
+      ios: {
+        shadowColor: '#000000',
+        shadowOffset: { width: 0, height: -6 },
+        shadowOpacity: 0.5,
+        shadowRadius: 12,
+      },
+      android: {
+        elevation: 16,
+      },
+    }),
   },
   speedSection: {
     alignItems: 'center',
-    paddingVertical: 2,
+    marginBottom: 4,
   },
   statsSection: {
     width: '100%',
+    marginBottom: 16,
   },
   controlsRow: {
     flexDirection: 'row',
-    gap: 10,
-    marginTop: 2,
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 40,
+    paddingTop: 2,
   },
-  controlBtn: {
-    flex: 1,
-    height: 52,
-    borderRadius: 12,
-    flexDirection: 'row',
+  controlItem: {
+    alignItems: 'center',
+    gap: 6,
+  },
+  actionCircleBtn: {
+    width: 62,
+    height: 62,
+    borderRadius: 31,
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 8,
   },
-  pauseBtn: {
-    backgroundColor: Colors.surface,
-    borderWidth: 1,
-    borderColor: Colors.surfaceBorderHighlight,
+  pauseCircleBtn: {
+    backgroundColor: 'rgba(255, 255, 255, 0.08)',
+    borderWidth: 1.5,
+    borderColor: 'rgba(255, 255, 255, 0.16)',
   },
-  pauseText: {
-    color: Colors.text,
-    fontSize: 14,
-    fontWeight: '900',
-    letterSpacing: 0.5,
+  resumeCircleBtnActive: {
+    backgroundColor: '#34D399',
+    borderColor: '#34D399',
   },
-  resumeBtnActive: {
-    backgroundColor: Colors.primary,
-    borderColor: Colors.primary,
+  endCircleBtn: {
+    backgroundColor: '#EF4444',
+    borderWidth: 1.5,
+    borderColor: '#F87171',
+    ...Platform.select({
+      ios: {
+        shadowColor: '#EF4444',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.45,
+        shadowRadius: 10,
+      },
+      android: {
+        elevation: 8,
+      },
+    }),
   },
-  resumeText: {
-    color: '#0C0E12',
-    fontSize: 14,
-    fontWeight: '900',
-    letterSpacing: 0.5,
+  controlBtnLabel: {
+    color: '#9CA3AF',
+    fontSize: 10,
+    fontWeight: '700',
+    letterSpacing: 0.8,
   },
-  endBtn: {
-    backgroundColor: Colors.danger,
-  },
-  endText: {
-    color: '#FFFFFF',
-    fontSize: 14,
-    fontWeight: '900',
-    letterSpacing: 0.5,
+  endBtnLabel: {
+    color: '#F87171',
   },
 });

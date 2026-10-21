@@ -1,6 +1,6 @@
 import React from 'react';
 import { View, Text, StyleSheet, Platform } from 'react-native';
-import { Compass, Clock, CheckCircle2, AlertCircle, ArrowUpRight, ArrowDownRight, Minus } from 'lucide-react-native';
+import { Compass, Clock, CheckCircle2, AlertCircle, ArrowUpRight, ArrowDownRight, Minus, Zap } from 'lucide-react-native';
 import { Ride } from '../types/ride';
 import { Coordinates } from '../services/distance';
 import { computeRoutePace } from '../services/paceService';
@@ -172,21 +172,36 @@ export const RoutePaceSummary: React.FC<RoutePaceSummaryProps> = ({
             : styles.verdictBannerNeutral,
         ]}
       >
-        <Text
-          style={[
-            styles.verdictTitle,
-            pace.verdictSuppressed
-              ? styles.textNeutral
-              : pace.verdict === 'faster'
-              ? styles.textEmerald
-              : pace.verdict === 'slower'
-              ? styles.textAmber
-              : styles.textNeutral,
-          ]}
-          maxFontSizeMultiplier={1.3}
-        >
-          {pace.verdictTitle}
-        </Text>
+        <View style={styles.verdictHeader}>
+          <Zap
+            size={14}
+            color={
+              pace.verdictSuppressed
+                ? UI.textSecondary
+                : pace.verdict === 'faster'
+                ? '#34D399'
+                : pace.verdict === 'slower'
+                ? '#F0C879'
+                : '#FFFFFF'
+            }
+            style={{ marginRight: 6 }}
+          />
+          <Text
+            style={[
+              styles.verdictTitle,
+              pace.verdictSuppressed
+                ? styles.textNeutral
+                : pace.verdict === 'faster'
+                ? styles.textEmerald
+                : pace.verdict === 'slower'
+                ? styles.textAmber
+                : styles.textNeutral,
+            ]}
+            maxFontSizeMultiplier={1.3}
+          >
+            {pace.verdictTitle}
+          </Text>
+        </View>
         <Text style={styles.verdictDescription} maxFontSizeMultiplier={1.3}>
           {pace.verdictDescription}
         </Text>
@@ -314,6 +329,11 @@ const styles = StyleSheet.create({
   verdictBannerNeutral: {
     backgroundColor: 'rgba(255, 255, 255, 0.05)',
     borderColor: 'rgba(255, 255, 255, 0.10)',
+  },
+  verdictHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 4,
   },
   verdictTitle: {
     fontSize: 13,

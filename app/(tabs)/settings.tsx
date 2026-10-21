@@ -39,6 +39,7 @@ import { UI } from '../../constants/ui';
 import { MAP_ATTRIBUTION } from '../../constants/map';
 import { deleteAllRides } from '../../database/rideRepository';
 import { deleteAllFuelLogs } from '../../database/fuelRepository';
+import { isExperimentalEnabled, setExperimentalEnabled } from '../../database/settingsRepository';
 import { InstagramIcon } from '../../components/svg/InstagramIcon';
 import { useTabBarHeight } from '../../components/FloatingTabBar';
 import { ScreenHeader } from '../../components/ui/ScreenHeader';
@@ -83,6 +84,17 @@ export default function SettingsScreen() {
   const [sheet, setSheet] = useState<SheetKey>(null);
   const [gpsLogging, setGpsLogging] = useState<boolean>(isGpsLoggingEnabled());
   const [logCount, setLogCount] = useState<number>(getGpsLogCount());
+  const [experimentalEnabled, setExperimentalEnabledState] = useState<boolean>(false);
+
+  React.useEffect(() => {
+    isExperimentalEnabled().then(setExperimentalEnabledState).catch(() => {});
+  }, []);
+
+  const toggleExperimental = async (enabled: boolean) => {
+    hapticFeedback.light();
+    setExperimentalEnabledState(enabled);
+    await setExperimentalEnabled(enabled);
+  };
 
   const iconProps = { size: 20, color: UI.textPrimary, strokeWidth: 1.6 } as const;
   const close = () => setSheet(null);
@@ -243,6 +255,26 @@ export default function SettingsScreen() {
         </FadeInUpView>
 
         <FadeInUpView index={2}>
+          <Text style={styles.sectionHeader}>Experimental</Text>
+          <Card padded={true}>
+            <View style={styles.experimentalToggleRow}>
+              <View style={styles.toggleTextWrap}>
+                <Text style={styles.toggleTitle}>Experimental features</Text>
+                <Text style={styles.toggleSubtitle}>
+                  Features here are unfinished and may change or disappear.
+                </Text>
+              </View>
+              <Switch
+                value={experimentalEnabled}
+                onValueChange={toggleExperimental}
+                trackColor={{ false: 'rgba(255,255,255,0.12)', true: UI.accent }}
+                thumbColor="#FFFFFF"
+              />
+            </View>
+          </Card>
+        </FadeInUpView>
+
+        <FadeInUpView index={3}>
           <Card padded={false} style={styles.aboutCard}>
             <ListRow
               variant="plain"
@@ -515,6 +547,22 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '500',
     paddingVertical: 8,
+  },
+  sectionHeader: {
+    color: UI.textSecondary,
+    fontSize: 12,
+    fontWeight: '700',
+    letterSpacing: 0.8,
+    textTransform: 'uppercase',
+    marginTop: 18,
+    marginBottom: 8,
+    paddingHorizontal: 2,
+  },
+  experimentalToggleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 4,
   },
   aboutCard: {
     marginTop: 18,

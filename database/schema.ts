@@ -75,6 +75,17 @@ export const CREATE_MOTORCYCLES_TABLE = `
   );
 `;
 
+export const CREATE_SAVED_DESTINATIONS_TABLE = `
+  CREATE TABLE IF NOT EXISTS saved_destinations (
+    id TEXT PRIMARY KEY NOT NULL,
+    name TEXT NOT NULL,
+    lat REAL NOT NULL,
+    lng REAL NOT NULL,
+    created_at INTEGER NOT NULL,
+    last_used_at INTEGER
+  );
+`;
+
 export const CREATE_INDEXES = `
   CREATE INDEX IF NOT EXISTS idx_track_points_ride_time ON track_points(ride_id, timestamp);
   CREATE INDEX IF NOT EXISTS idx_rides_status ON rides(status);
@@ -83,5 +94,7 @@ export const CREATE_INDEXES = `
   CREATE INDEX IF NOT EXISTS idx_fuel_logs_odometer ON fuel_logs(vehicle_id, odometer ASC);
   CREATE INDEX IF NOT EXISTS idx_fuel_logs_created_at ON fuel_logs(created_at DESC);
   CREATE INDEX IF NOT EXISTS idx_motorcycles_default ON motorcycles(is_default DESC, created_at ASC);
+  CREATE INDEX IF NOT EXISTS idx_saved_destinations_name ON saved_destinations(name);
+  CREATE INDEX IF NOT EXISTS idx_saved_destinations_last_used ON saved_destinations(last_used_at DESC);
 `;
 

@@ -25,8 +25,7 @@ interface RideMapProps {
   zoomLevel?: number;
   showStartEndMarkers?: boolean;
   height?: number | string;
-  onLongPress?: (coordinate: [number, number]) => void;
-  pinnedCoordinate?: [number, number] | null;
+  recenterTrigger?: number;
 }
 
 export const RideMap: React.FC<RideMapProps> = ({
@@ -38,8 +37,7 @@ export const RideMap: React.FC<RideMapProps> = ({
   zoomLevel = 15,
   showStartEndMarkers = true,
   height = '100%',
-  onLongPress,
-  pinnedCoordinate,
+  recenterTrigger,
 }) => {
   const cameraRef = useRef<CameraRef>(null);
   const [mapReady, setMapReady] = useState(false);
@@ -60,9 +58,7 @@ export const RideMap: React.FC<RideMapProps> = ({
     ],
   };
 
-  const centerCoordinate: [number, number] = pinnedCoordinate
-    ? pinnedCoordinate
-    : currentLocation
+  const centerCoordinate: [number, number] = currentLocation
     ? [currentLocation.longitude, currentLocation.latitude]
     : coordinates.length > 0
     ? coordinates[coordinates.length - 1]
@@ -72,6 +68,18 @@ export const RideMap: React.FC<RideMapProps> = ({
   const endCoordinate = coordinates.length > 1 ? coordinates[coordinates.length - 1] : null;
 
   const lastCameraCenter = useRef<[number, number] | null>(null);
+
+  useEffect(() => {
+    if (cameraRef.current && mapReady && currentLocation && recenterTrigger) {
+      const curCenter: [number, number] = [currentLocation.longitude, currentLocation.latitude];
+      lastCameraCenter.current = curCenter;
+      cameraRef.current.easeTo({
+        center: curCenter,
+        zoom: zoomLevel,
+        duration: 800,
+      });
+    }
+  }, [recenterTrigger]);
 
   useEffect(() => {
     if (cameraRef.current && mapReady) {
@@ -118,12 +126,6 @@ export const RideMap: React.FC<RideMapProps> = ({
         touchZoom={interactive}
         touchRotate={interactive}
         touchPitch={false}
-        onLongPress={(event) => {
-          const lngLat = event.nativeEvent?.lngLat ?? (event as any).lngLat;
-          if (lngLat && Array.isArray(lngLat) && typeof lngLat[0] === 'number') {
-            onLongPress?.([lngLat[0], lngLat[1]]);
-          }
-        }}
         onDidFinishLoadingMap={() => setMapReady(true)}
         onDidFailLoadingMap={() => {
           setMapError('Offline · Map tiles unavailable');
@@ -181,15 +183,6 @@ export const RideMap: React.FC<RideMapProps> = ({
           <Marker id="endPoint" lngLat={endCoordinate}>
             <View>
               <EndMarker size={24} />
-            </View>
-          </Marker>
-        )}
-
-        {/* Pinned Destination Marker */}
-        {pinnedCoordinate && (
-          <Marker id="pinnedPoint" lngLat={pinnedCoordinate}>
-            <View>
-              <EndMarker size={28} />
             </View>
           </Marker>
         )}
