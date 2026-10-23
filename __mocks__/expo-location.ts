@@ -7,6 +7,13 @@ export const Accuracy = {
   Highest: 5,
   BestForNavigation: 6,
 };
+export const ActivityType = {
+  Other: 1,
+  AutomotiveNavigation: 2,
+  Fitness: 3,
+  OtherNavigation: 4,
+  Airborne: 5,
+};
 export const getForegroundPermissionsAsync = jest.fn().mockResolvedValue({ granted: true });
 export const getBackgroundPermissionsAsync = jest.fn().mockResolvedValue({ granted: false });
 export const requestForegroundPermissionsAsync = jest.fn().mockResolvedValue({ granted: true });

@@ -160,9 +160,24 @@ class TrackingService {
     error?: string;
     errorType?: 'permission' | 'location' | 'database' | 'system';
   }> {
+    // Prevent concurrent starts or starting while already running
+    if (this.state.status === 'starting' || this.state.status === 'running') {
+      return {
+        success: false,
+        error: 'A ride is already starting or running.',
+      };
+    }
+
+    this.state.status = 'starting';
+    this.notifyListeners(true);
+
+    let insertedRideId: string | null = null;
+
     try {
       const perms = await requestLocationPermissions();
       if (!perms.canTrack) {
+        this.state.status = 'idle';
+        this.notifyListeners(true);
         return {
           success: false,
           error: perms.isReducedAccuracy
@@ -171,9 +186,6 @@ class TrackingService {
           errorType: 'permission',
         };
       }
-
-      this.state.status = 'starting';
-      this.notifyListeners(true);
 
       const initialFix = await getCurrentGPSFix();
       const startTime = Date.now();
@@ -205,6 +217,7 @@ class TrackingService {
 
       try {
         await createRide(newRide);
+        insertedRideId = rideId;
 
         if (initialFix) {
           await insertTrackPoint({
@@ -221,6 +234,7 @@ class TrackingService {
       } catch (dbErr) {
         console.error('[Rideoxy] [TrackingService] Database failure while creating ride record:', dbErr);
         this.state.status = 'idle';
+        this.state.currentRide = null;
         this.notifyListeners(true);
         return {
           success: false,
@@ -279,7 +293,15 @@ class TrackingService {
       } catch (locErr) {
         console.error('[Rideoxy] [TrackingService] Location tracking service error:', locErr);
         this.stopDurationTimer();
+        if (insertedRideId) {
+          try {
+            await deleteRide(insertedRideId);
+          } catch (delErr) {
+            console.error('[Rideoxy] [TrackingService] Failed to clean up orphaned ride:', delErr);
+          }
+        }
         this.state.status = 'idle';
+        this.state.currentRide = null;
         this.notifyListeners(true);
         return {
           success: false,
@@ -301,7 +323,13 @@ class TrackingService {
       const errorMsg = err instanceof Error ? err.message : String(err);
       console.error('[Rideoxy] [TrackingService] Unexpected error in startRide:', err);
       this.stopDurationTimer();
+      if (insertedRideId) {
+        try {
+          await deleteRide(insertedRideId);
+        } catch {}
+      }
       this.state.status = 'idle';
+      this.state.currentRide = null;
       this.notifyListeners(true);
       return { success: false, error: errorMsg, errorType: 'system' };
     }
@@ -338,10 +366,55 @@ class TrackingService {
   /**
    * Resume the active ride
    */
-  public async resumeRide(): Promise<void> {
-    if (this.state.status !== 'paused' && this.state.status !== 'interrupted') return;
-    if (!this.state.currentRide) return;
+  public async resumeRide(): Promise<{
+    success: boolean;
+    error?: string;
+    errorType?: 'permission' | 'location' | 'database' | 'system';
+  }> {
+    if (this.state.status !== 'paused' && this.state.status !== 'interrupted') {
+      return {
+        success: false,
+        error: 'Ride is not in a paused or interrupted state.',
+      };
+    }
+    if (!this.state.currentRide) {
+      return {
+        success: false,
+        error: 'No active ride session found to resume.',
+      };
+    }
 
+    // 1. Permission check (same authoritative check as startRide)
+    const perms = await requestLocationPermissions();
+    if (!perms.canTrack) {
+      const errorMsg = perms.isReducedAccuracy
+        ? 'Precise location is required. Please enable Precise Location in Settings.'
+        : 'Location permission is required to record a ride.';
+      return {
+        success: false,
+        error: errorMsg,
+        errorType: 'permission',
+      };
+    }
+
+    // 2. Start single authoritative location subscription before claiming running state
+    try {
+      const trackRes = await startLocationTracking((point) => {
+        this.handleIncomingGPSPoints([point]);
+      });
+      if (!trackRes.success) {
+        throw new Error('Failed to start location tracking service.');
+      }
+    } catch (locErr) {
+      console.error('[Rideoxy] [TrackingService] Location tracking service error on resume:', locErr);
+      return {
+        success: false,
+        error: locErr instanceof Error ? locErr.message : 'Failed to start GPS tracking service.',
+        errorType: 'location',
+      };
+    }
+
+    // 3. Callback registered and tracking successfully active
     this.state.status = 'running';
     this.state.currentSpeedKmh = 0;
     this.lastPointReceivedTime = 0;
@@ -363,12 +436,8 @@ class TrackingService {
       this.stationaryAnchor = this.lastRecordedPoint;
     }
 
-    // Start single authoritative location subscription
-    await startLocationTracking((point) => {
-      this.handleIncomingGPSPoints([point]);
-    });
-
     this.notifyListeners(true);
+    return { success: true };
   }
 
   /**
@@ -442,9 +511,8 @@ class TrackingService {
   /**
    * Reset state to IDLE
    */
-  public resetToIdle(): void {
+  public async resetToIdle(): Promise<void> {
     this.stopDurationTimer();
-    stopLocationTracking();
     this.stationaryAnchor = null;
 
     this.state = {
@@ -470,6 +538,8 @@ class TrackingService {
     this.lastPointReceivedTime = 0;
     this.isGpsStale = false;
     this.notifyListeners(true);
+
+    await stopLocationTracking();
   }
 
   /**
@@ -588,6 +658,31 @@ class TrackingService {
       // If GPS is resuming after a stale period (>= 2s without fixes),
       // re-anchor baseline with the fresh point without adding stale distance/time
       if (this.isGpsStale) {
+        const validation = validateGPSPoint(point, this.lastRecordedPoint, this.stationaryAnchor, {
+          isCurrentlyStill: this.isStill,
+          consecutiveMovingFixes: this.consecutiveMovingFixes,
+        });
+
+        if (!validation.isValid || validation.isDemoted) {
+          recordGpsDebugFix({
+            timestamp: point.timestamp,
+            accuracy: point.accuracy,
+            reportedSpeed: point.speed !== null && point.speed !== undefined && point.speed >= 0 ? point.speed : null,
+            derivedSpeed: validation.derivedSpeedMs ?? null,
+            distanceFromLastAccepted: validation.distanceFromLastAccepted ?? 0,
+            decision: validation.isDemoted ? 'demoted' : 'rejected',
+            reason: validation.reason,
+            isStill: this.isStill,
+            mocked: point.mocked,
+          });
+
+          if (point.accuracy && point.accuracy > GPS_CONFIG.MAX_ACCEPTABLE_ACCURACY_METERS) {
+            this.state.gpsSignalState = 'poor';
+          }
+          // A rejected re-anchor candidate changes nothing: stay stale, keep old anchor, wait for next fix
+          continue;
+        }
+
         this.isGpsStale = false;
         this.lastRecordedPoint = point;
         this.stationaryAnchor = point;
@@ -602,6 +697,18 @@ class TrackingService {
         };
         this.state.currentSpeedKmh = 0;
         this.state.lastUpdated = now;
+
+        recordGpsDebugFix({
+          timestamp: point.timestamp,
+          accuracy: point.accuracy,
+          reportedSpeed: point.speed !== null && point.speed !== undefined && point.speed >= 0 ? point.speed : null,
+          derivedSpeed: 0,
+          distanceFromLastAccepted: validation.distanceFromLastAccepted ?? 0,
+          decision: 'still',
+          reason: 'Stale period re-anchor baseline',
+          isStill: this.isStill,
+          mocked: point.mocked,
+        });
 
         console.log('[GPS RE-ANCHOR]', {
           timestamp: point.timestamp,
@@ -695,8 +802,37 @@ class TrackingService {
         this.consecutiveMovingFixes = validation.consecutiveMovingFixes ?? 0;
         this.speedSmoothingQueue = [];
 
-        // Vehicle is stationary: anchor position to prevent wandering baseline
-        if (!this.stationaryAnchor && this.lastRecordedPoint) {
+        // If this is the ride's first fix arriving after startRide had no initial fix:
+        // Establish initial baseline anchor and location so subsequent fixes can measure motion
+        if (!this.lastRecordedPoint) {
+          this.lastRecordedPoint = point;
+          this.stationaryAnchor = point;
+          this.state.currentLocation = {
+            latitude: point.latitude,
+            longitude: point.longitude,
+            heading: point.heading,
+            accuracy: point.accuracy,
+            altitude: point.altitude,
+          };
+          this.state.routeCoordinates.push([point.longitude, point.latitude]);
+          this.state.recentPointsCount++;
+          newCoordsAdded = true;
+          try {
+            await insertTrackPoint({
+              ride_id: rideId,
+              latitude: point.latitude,
+              longitude: point.longitude,
+              altitude: point.altitude,
+              speed: 0,
+              accuracy: point.accuracy,
+              heading: point.heading,
+              timestamp: point.timestamp,
+            });
+          } catch (err) {
+            console.error('[Rideoxy] Failed to insert initial baseline trackpoint:', err);
+          }
+        } else if (!this.stationaryAnchor) {
+          // Vehicle is stationary: anchor position to prevent wandering baseline
           this.stationaryAnchor = this.lastRecordedPoint;
         }
 

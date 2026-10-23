@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useRef } from 'react';
-import { StyleSheet, Platform } from 'react-native';
+import { StyleSheet, Platform, Alert } from 'react-native';
 import { Stack, useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
@@ -114,8 +114,16 @@ export default function RootLayout() {
   }, [isSplashFinished, interruptedRide, router]);
 
   const handleResumeRide = async () => {
+    const res = await trackingService.resumeRide();
+    if (!res.success) {
+      Alert.alert(
+        'GPS Location Required',
+        res.error ?? 'Location permission is required to resume tracking.'
+      );
+      setShowRecoveryModal(true);
+      return;
+    }
     setShowRecoveryModal(false);
-    await trackingService.resumeRide();
     router.push('/active-ride');
   };
 

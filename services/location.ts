@@ -186,9 +186,14 @@ export async function getCurrentGPSFix(): Promise<RawGPSPoint | null> {
 // Authoritative tracking subscription state
 let activeTrackingMode: 'none' | 'background' | 'foreground' = 'none';
 let foregroundSubscription: Location.LocationSubscription | null = null;
+let stopTrackingPromise: Promise<void> | null = null;
 
 export function getActiveTrackingMode(): 'none' | 'background' | 'foreground' {
   return activeTrackingMode;
+}
+
+export function isTeardownInFlight(): boolean {
+  return stopTrackingPromise !== null;
 }
 
 /**
@@ -200,9 +205,14 @@ export function getActiveTrackingMode(): 'none' | 'background' | 'foreground' {
 export async function startLocationTracking(
   onLocation: (point: RawGPSPoint) => void
 ): Promise<{ success: boolean; mode: 'background' | 'foreground' }> {
-  // If already tracking, return the existing active mode without creating duplicate subscriptions
+  // 1. If a teardown is currently in flight, wait for it to finish cleanly first
+  if (stopTrackingPromise) {
+    await stopTrackingPromise;
+  }
+
+  // 2. If already tracking, cleanly stop previous session before binding new callback
   if (activeTrackingMode !== 'none') {
-    return { success: true, mode: activeTrackingMode };
+    await stopLocationTracking();
   }
 
   // Check current permissions including reduced accuracy check
@@ -286,29 +296,42 @@ export async function startLocationTracking(
 
 /**
  * Stops any and all active location subscriptions cleanly and idempotently.
+ * Thread-safe: serializes concurrent/rapid calls into a single awaitable teardown promise.
  */
 export async function stopLocationTracking(): Promise<void> {
-  // 1. Remove foreground watcher if active
-  if (foregroundSubscription) {
-    foregroundSubscription.remove();
-    foregroundSubscription = null;
+  if (stopTrackingPromise) {
+    return stopTrackingPromise;
   }
 
-  // 2. Stop background location task if active
-  try {
-    const isRegistered = await Location.hasStartedLocationUpdatesAsync(BACKGROUND_LOCATION_TASK);
-    if (isRegistered) {
-      await Location.stopLocationUpdatesAsync(BACKGROUND_LOCATION_TASK);
+  stopTrackingPromise = (async () => {
+    try {
+      // 1. Remove foreground watcher if active
+      if (foregroundSubscription) {
+        foregroundSubscription.remove();
+        foregroundSubscription = null;
+      }
+
+      // 2. Stop background location task if active
+      try {
+        const isRegistered = await Location.hasStartedLocationUpdatesAsync(BACKGROUND_LOCATION_TASK);
+        if (isRegistered) {
+          await Location.stopLocationUpdatesAsync(BACKGROUND_LOCATION_TASK);
+        }
+      } catch (err) {
+        console.warn('[Rideoxy] [LocationService] Error stopping background location updates:', err);
+      }
+
+      // 3. Clear TaskManager callback
+      registerLocationUpdateCallback(null);
+
+      activeTrackingMode = 'none';
+      console.log('[Rideoxy] [LocationService] All location subscriptions stopped cleanly');
+    } finally {
+      stopTrackingPromise = null;
     }
-  } catch (err) {
-    console.warn('[Rideoxy] [LocationService] Error stopping background location updates:', err);
-  }
+  })();
 
-  // 3. Clear TaskManager callback
-  registerLocationUpdateCallback(null);
-
-  activeTrackingMode = 'none';
-  console.log('[Rideoxy] [LocationService] All location subscriptions stopped cleanly');
+  return stopTrackingPromise;
 }
 
 // Backwards-compatible aliases

@@ -80,7 +80,10 @@ export default function ActiveRideScreen() {
     if (trackingState.status === 'running') {
       await trackingService.pauseRide();
     } else if (trackingState.status === 'paused') {
-      await trackingService.resumeRide();
+      const res = await trackingService.resumeRide();
+      if (!res.success && res.error) {
+        Alert.alert('GPS Location Required', res.error);
+      }
     }
   };
 
