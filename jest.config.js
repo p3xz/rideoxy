@@ -26,5 +26,6 @@ module.exports = {
     '^expo-image-picker$': '<rootDir>/__mocks__/expo-image-picker.ts',
     '^expo-haptics$': '<rootDir>/__mocks__/expo-haptics.ts',
     '^expo-splash-screen$': '<rootDir>/__mocks__/expo-splash-screen.ts',
+    '^expo-sensors$': '<rootDir>/__mocks__/expo-sensors.ts',
   },
 };

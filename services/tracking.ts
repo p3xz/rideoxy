@@ -3,8 +3,9 @@ import { fetchRouteEta } from './etaService';
 import { Coordinates } from './distance';
 import { LiveTrackingState } from '../types/tracking';
 import { GPS_CONFIG, GPS_FILTER_CONFIG } from '../constants/gps';
-import { validateGPSPoint } from './gpsFilter';
+import { validateGPSPoint, GpsKalmanFilter, ImuMotionDetector } from './gpsFilter';
 import { recordGpsDebugFix } from './gpsDebugLog';
+import { Accelerometer, Gyroscope } from 'expo-sensors';
 import {
   createRide,
   updateRide,
@@ -50,6 +51,10 @@ class TrackingService {
   private isStill: boolean = true;
   private consecutiveMovingFixes: number = 0;
   private speedSmoothingQueue: number[] = [];
+  private kalmanFilter: GpsKalmanFilter = new GpsKalmanFilter();
+  private imuDetector: ImuMotionDetector = new ImuMotionDetector();
+  private accelSubscription: { remove: () => void } | null = null;
+  private gyroSubscription: { remove: () => void } | null = null;
   private timerInterval: ReturnType<typeof setInterval> | null = null;
   private tickCounter: number = 0;
   private lastDbSyncTime: number = 0;
@@ -57,6 +62,52 @@ class TrackingService {
 
   constructor() {
     // Single location subscription lifecycle is managed explicitly in startRide/resumeRide/pauseRide/endRide
+  }
+
+  /**
+   * Subscribe to phone accelerometer and gyroscope (expo-sensors) to confirm moving vs stationary.
+   */
+  private async startImuMonitoring(): Promise<void> {
+    this.stopImuMonitoring();
+    try {
+      const accelAvail = await Accelerometer.isAvailableAsync();
+      if (accelAvail) {
+        Accelerometer.setUpdateInterval(200);
+        this.accelSubscription = Accelerometer.addListener((data) => {
+          this.imuDetector.addAccelerometerSample(data);
+        });
+      }
+    } catch {
+      // Sensor unavailable in current environment; fallback to GPS-only stationary detection
+    }
+
+    try {
+      const gyroAvail = await Gyroscope.isAvailableAsync();
+      if (gyroAvail) {
+        Gyroscope.setUpdateInterval(200);
+        this.gyroSubscription = Gyroscope.addListener((data) => {
+          this.imuDetector.addGyroscopeSample(data);
+        });
+      }
+    } catch {
+      // Sensor unavailable in current environment; fallback to GPS-only stationary detection
+    }
+  }
+
+  private stopImuMonitoring(): void {
+    try {
+      if (this.accelSubscription) {
+        this.accelSubscription.remove();
+        this.accelSubscription = null;
+      }
+    } catch {}
+    try {
+      if (this.gyroSubscription) {
+        this.gyroSubscription.remove();
+        this.gyroSubscription = null;
+      }
+    } catch {}
+    this.imuDetector.reset();
   }
 
   public getState(): LiveTrackingState {
@@ -187,7 +238,35 @@ class TrackingService {
         };
       }
 
-      const initialFix = await getCurrentGPSFix();
+      const rawInitialFix = await getCurrentGPSFix();
+      let initialFix: RawGPSPoint | null = null;
+      if (rawInitialFix) {
+        const initValidation = validateGPSPoint(rawInitialFix, null, null, {
+          isCurrentlyStill: true,
+          consecutiveMovingFixes: 0,
+        });
+        if (initValidation.isValid && !initValidation.isDemoted) {
+          initialFix = rawInitialFix;
+        } else {
+          recordGpsDebugFix({
+            timestamp: rawInitialFix.timestamp,
+            accuracy: rawInitialFix.accuracy,
+            reportedSpeed:
+              rawInitialFix.speed !== null &&
+              rawInitialFix.speed !== undefined &&
+              rawInitialFix.speed >= 0
+                ? rawInitialFix.speed
+                : null,
+            derivedSpeed: initValidation.derivedSpeedMs ?? null,
+            distanceFromLastAccepted: 0,
+            decision: initValidation.isDemoted ? 'demoted' : 'rejected',
+            reason: initValidation.reason ?? 'Initial fix failed validation or accuracy gate',
+            isStill: true,
+            mocked: rawInitialFix.mocked,
+          });
+        }
+      }
+
       const startTime = Date.now();
       const rideId = `ride_${startTime}_${Math.random().toString(36).substring(2, 7)}`;
 
@@ -245,6 +324,7 @@ class TrackingService {
 
       this.lastRecordedPoint = initialFix;
       this.stationaryAnchor = initialFix;
+      this.kalmanFilter.reset(initialFix);
       this.isStill = true;
       this.consecutiveMovingFixes = 0;
       this.speedSmoothingQueue = [];
@@ -281,6 +361,7 @@ class TrackingService {
 
       // Start duration & staleness watchdog ticker
       this.startDurationTimer();
+      await this.startImuMonitoring();
 
       // Start authoritative single location tracking subscription
       try {
@@ -293,6 +374,7 @@ class TrackingService {
       } catch (locErr) {
         console.error('[Rideoxy] [TrackingService] Location tracking service error:', locErr);
         this.stopDurationTimer();
+        this.stopImuMonitoring();
         if (insertedRideId) {
           try {
             await deleteRide(insertedRideId);
@@ -323,6 +405,7 @@ class TrackingService {
       const errorMsg = err instanceof Error ? err.message : String(err);
       console.error('[Rideoxy] [TrackingService] Unexpected error in startRide:', err);
       this.stopDurationTimer();
+      this.stopImuMonitoring();
       if (insertedRideId) {
         try {
           await deleteRide(insertedRideId);
@@ -348,6 +431,7 @@ class TrackingService {
     this.isStill = true;
     this.consecutiveMovingFixes = 0;
     this.speedSmoothingQueue = [];
+    this.stopImuMonitoring();
 
     // Stop native location tracking while paused to save battery and prevent unwanted background churn
     await stopLocationTracking();
@@ -415,6 +499,7 @@ class TrackingService {
     }
 
     // 3. Callback registered and tracking successfully active
+    await this.startImuMonitoring();
     this.state.status = 'running';
     this.state.currentSpeedKmh = 0;
     this.lastPointReceivedTime = 0;
@@ -422,6 +507,7 @@ class TrackingService {
     this.isStill = true;
     this.consecutiveMovingFixes = 0;
     this.speedSmoothingQueue = [];
+    this.kalmanFilter.reset(this.lastRecordedPoint);
 
     await updateRide(this.state.currentRide.id, {
       status: 'running',
@@ -449,8 +535,10 @@ class TrackingService {
     const rideId = this.state.currentRide.id;
     this.state.status = 'finishing';
     this.stopDurationTimer();
+    this.stopImuMonitoring();
     await stopLocationTracking();
     this.stationaryAnchor = null;
+    this.kalmanFilter.reset(null);
 
     const endTime = Date.now();
     const finalRide: Ride = {
@@ -491,8 +579,10 @@ class TrackingService {
    */
   public async discardRide(): Promise<void> {
     this.stopDurationTimer();
+    this.stopImuMonitoring();
     await stopLocationTracking();
     this.stationaryAnchor = null;
+    this.kalmanFilter.reset(null);
 
     if (this.state.currentRide) {
       await deleteRide(this.state.currentRide.id);
@@ -513,7 +603,9 @@ class TrackingService {
    */
   public async resetToIdle(): Promise<void> {
     this.stopDurationTimer();
+    this.stopImuMonitoring();
     this.stationaryAnchor = null;
+    this.kalmanFilter.reset(null);
 
     this.state = {
       status: 'idle',
@@ -661,6 +753,7 @@ class TrackingService {
         const validation = validateGPSPoint(point, this.lastRecordedPoint, this.stationaryAnchor, {
           isCurrentlyStill: this.isStill,
           consecutiveMovingFixes: this.consecutiveMovingFixes,
+          imuIsStationary: this.imuDetector.isStationary(),
         });
 
         if (!validation.isValid || validation.isDemoted) {
@@ -686,6 +779,7 @@ class TrackingService {
         this.isGpsStale = false;
         this.lastRecordedPoint = point;
         this.stationaryAnchor = point;
+        this.kalmanFilter.reset(point);
         this.lastPointReceivedTime = now;
         this.state.gpsSignalState = 'good';
         this.state.currentLocation = {
@@ -722,6 +816,8 @@ class TrackingService {
       const validation = validateGPSPoint(point, this.lastRecordedPoint, this.stationaryAnchor, {
         isCurrentlyStill: this.isStill,
         consecutiveMovingFixes: this.consecutiveMovingFixes,
+        imuIsStationary: this.imuDetector.isStationary(),
+        kalmanFilter: this.kalmanFilter,
       });
 
       if (!validation.isValid) {
@@ -754,26 +850,10 @@ class TrackingService {
       this.lastPointReceivedTime = now;
       this.state.gpsSignalState = 'good';
 
-      // Demoted fix (accuracy worse than platform threshold, e.g. iOS 20m, Android 25m)
-      // Contributes NO distance, NO track point, NO top speed, and never moves the stationary anchor
+      // Demoted fix (accuracy worse than MAX_ACCEPTABLE_ACCURACY_METERS: iOS 20m, Android 25m)
+      // Strictly ignored until a good fix arrives: contributes NO distance, NO track point, NO top speed, and never sets or moves an anchor
       if (validation.isDemoted) {
-        const rideStart = this.state.currentRide?.start_time ?? now;
-        const hasWaited10sAtStart = !this.lastRecordedPoint && (now - rideStart >= 10000);
-
-        // One exception: a demoted fix may serve as a ride's first origin if no better fix arrives within about 10 seconds of ride start
-        if (hasWaited10sAtStart) {
-          this.lastRecordedPoint = point;
-          this.stationaryAnchor = point;
-          this.state.currentLocation = {
-            latitude: point.latitude,
-            longitude: point.longitude,
-            heading: point.heading,
-            accuracy: point.accuracy,
-            altitude: point.altitude,
-          };
-          this.state.currentSpeedKmh = 0;
-          this.state.lastUpdated = now;
-        }
+        this.state.gpsSignalState = 'poor';
 
         recordGpsDebugFix({
           timestamp: point.timestamp,
@@ -802,11 +882,12 @@ class TrackingService {
         this.consecutiveMovingFixes = validation.consecutiveMovingFixes ?? 0;
         this.speedSmoothingQueue = [];
 
-        // If this is the ride's first fix arriving after startRide had no initial fix:
+        // If this is the ride's first valid & accurate fix arriving after startRide had no initial fix:
         // Establish initial baseline anchor and location so subsequent fixes can measure motion
         if (!this.lastRecordedPoint) {
           this.lastRecordedPoint = point;
           this.stationaryAnchor = point;
+          this.kalmanFilter.reset(point);
           this.state.currentLocation = {
             latitude: point.latitude,
             longitude: point.longitude,
@@ -847,7 +928,7 @@ class TrackingService {
           derivedSpeed: validation.derivedSpeedMs ?? null,
           distanceFromLastAccepted: validation.distanceFromLastAccepted ?? 0,
           decision: 'still',
-          reason: 'Stationary (< 8m/accuracy radius or speed < 1m/s)',
+          reason: validation.reason ?? 'Stationary (< 8m/accuracy radius or speed < 1m/s)',
           isStill: true,
           mocked: point.mocked,
         });
@@ -879,6 +960,8 @@ class TrackingService {
       this.consecutiveMovingFixes = validation.consecutiveMovingFixes ?? 0;
       this.stationaryAnchor = null;
 
+      const acceptedPoint = validation.smoothedPoint ?? point;
+
       // Single authoritative speed, distance, and duration source
       // Smooth displayed speed with 3-fix moving average
       this.speedSmoothingQueue.push(calculatedSpeedKmh);
@@ -891,13 +974,13 @@ class TrackingService {
       this.state.currentSpeedKmh = Math.round(smoothedSpeedKmh * 10) / 10;
       this.state.lastUpdated = now;
 
-      // Authoritative location ONLY updates on accepted movement
+      // Authoritative location ONLY updates on accepted movement (with Kalman-smoothed coordinates)
       this.state.currentLocation = {
-        latitude: point.latitude,
-        longitude: point.longitude,
-        heading: point.heading,
-        accuracy: point.accuracy,
-        altitude: point.altitude,
+        latitude: acceptedPoint.latitude,
+        longitude: acceptedPoint.longitude,
+        heading: acceptedPoint.heading,
+        accuracy: acceptedPoint.accuracy,
+        altitude: acceptedPoint.altitude,
       };
 
       // Update max speed only from accepted, non-spike, moving fixes
@@ -940,21 +1023,21 @@ class TrackingService {
         maxSpeed: `${this.state.currentMaxSpeedKmh.toFixed(2)} km/h`,
       });
 
-      // Append coordinate to route for map display
-      this.state.routeCoordinates.push([point.longitude, point.latitude]);
+      // Append smoothed coordinate to route for map display
+      this.state.routeCoordinates.push([acceptedPoint.longitude, acceptedPoint.latitude]);
       this.state.recentPointsCount++;
       newCoordsAdded = true;
 
       // Save point to SQLite
       const trackPoint: TrackPoint = {
         ride_id: rideId,
-        latitude: point.latitude,
-        longitude: point.longitude,
-        altitude: point.altitude,
-        speed: point.speed,
-        accuracy: point.accuracy,
-        heading: point.heading,
-        timestamp: point.timestamp,
+        latitude: acceptedPoint.latitude,
+        longitude: acceptedPoint.longitude,
+        altitude: acceptedPoint.altitude,
+        speed: acceptedPoint.speed,
+        accuracy: acceptedPoint.accuracy,
+        heading: acceptedPoint.heading,
+        timestamp: acceptedPoint.timestamp,
       };
 
       try {
@@ -963,7 +1046,7 @@ class TrackingService {
         console.error('[Rideoxy] Failed to insert trackpoint:', err);
       }
 
-      this.lastRecordedPoint = point;
+      this.lastRecordedPoint = acceptedPoint;
     }
 
     // Periodic SQLite ride table sync (every 10 seconds)

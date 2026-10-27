@@ -5,7 +5,16 @@
  * No real GPS hardware required — all inputs are synthetic RawGPSPoint objects.
  */
 
-import { validateGPSPoint, GPSValidationResult } from '../services/gpsFilter';
+import {
+  validateGPSPoint,
+  GPSValidationResult,
+  GpsKalmanFilter,
+  ImuMotionDetector,
+  smoothGPSTrace,
+} from '../services/gpsFilter';
+import { trackingService } from '../services/tracking';
+import * as locationService from '../services/location';
+import { calculateDistanceMeters } from '../services/distance';
 import { RawGPSPoint } from '../types/ride';
 import { GPS_CONFIG, GPS_FILTER_CONFIG } from '../constants/gps';
 
@@ -337,6 +346,266 @@ describe('gpsFilter Core Tests', () => {
 
       expect(result.isValid).toBe(false);
       expect(result.reason).toMatch(/null island/i);
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // Test 14 — Anchor validation on the initial fix
+  // ---------------------------------------------------------------------------
+  describe('Test 14 — Anchor validation on the initial fix', () => {
+    afterEach(async () => {
+      jest.restoreAllMocks();
+      await trackingService.resetToIdle();
+    });
+
+    it('should reject invalid or poor-accuracy initial fix in startRide() and never anchor until a valid fix arrives', async () => {
+      const now = recentTimestamp();
+      // Mock getCurrentGPSFix returning a poor-accuracy fix (48m > MAX_ACCEPTABLE_ACCURACY_METERS)
+      jest.spyOn(locationService, 'checkLocationPermissions').mockResolvedValue({
+        foregroundGranted: true,
+        backgroundGranted: true,
+        canTrack: true,
+      });
+      jest.spyOn(locationService, 'startLocationTracking').mockResolvedValue({
+        success: true,
+        mode: 'foreground',
+      });
+      jest.spyOn(locationService, 'stopLocationTracking').mockResolvedValue();
+      jest.spyOn(locationService, 'getCurrentGPSFix').mockResolvedValue(
+        makePoint({
+          latitude: 28.6139,
+          longitude: 77.2090,
+          accuracy: 48, // Worse than MAX_ACCEPTABLE_ACCURACY_METERS (20m/25m)
+          timestamp: now,
+        })
+      );
+
+      const startRes = await trackingService.startRide();
+      expect(startRes.success).toBe(true);
+
+      // Anchor must remain null because initialFix was demoted by validateGPSPoint
+      expect((trackingService as any).lastRecordedPoint).toBeNull();
+      expect((trackingService as any).stationaryAnchor).toBeNull();
+      expect(trackingService.getState().routeCoordinates).toHaveLength(0);
+
+      // Feed a Null Island fix at start -> dropped, still no anchor
+      await (trackingService as any).handleIncomingGPSPoints([
+        makePoint({ latitude: 0, longitude: 0, accuracy: 5, timestamp: now + 1000 }),
+      ]);
+      expect((trackingService as any).lastRecordedPoint).toBeNull();
+      expect((trackingService as any).stationaryAnchor).toBeNull();
+
+      // Feed a poor-accuracy fix even 15 seconds after ride start -> strictly ignored, never anchors
+      await (trackingService as any).handleIncomingGPSPoints([
+        makePoint({ latitude: 28.6139, longitude: 77.2090, accuracy: 35, timestamp: now + 15000 }),
+      ]);
+      expect((trackingService as any).lastRecordedPoint).toBeNull();
+      expect((trackingService as any).stationaryAnchor).toBeNull();
+
+      // Now feed a valid, accurate fix (accuracy 8m <= MAX_ACCEPTABLE_ACCURACY_METERS) -> sets initial anchor
+      const goodFirstFix = makePoint({
+        latitude: 28.6139,
+        longitude: 77.2090,
+        accuracy: 8,
+        timestamp: Date.now(),
+      });
+      await (trackingService as any).handleIncomingGPSPoints([goodFirstFix]);
+
+      expect((trackingService as any).lastRecordedPoint).not.toBeNull();
+      expect((trackingService as any).stationaryAnchor).not.toBeNull();
+      expect((trackingService as any).lastRecordedPoint.latitude).toBeCloseTo(28.6139, 5);
+      expect(trackingService.getState().currentDistanceKm).toBe(0);
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // Test 15 — Anchor validation on stale-period resume
+  // ---------------------------------------------------------------------------
+  describe('Test 15 — Anchor validation on stale-period resume', () => {
+    afterEach(async () => {
+      await trackingService.resetToIdle();
+    });
+
+    it('should validate candidate fixes during stale resume and reject invalid or poor-accuracy re-anchors', async () => {
+      const now = recentTimestamp();
+      const validOrigin = makePoint({
+        latitude: 28.6139,
+        longitude: 77.2090,
+        accuracy: 6,
+        timestamp: now - 5000,
+      });
+
+      await trackingService.resetToIdle();
+      (trackingService as any).state = {
+        ...trackingService.getState(),
+        status: 'running',
+        currentRide: {
+          id: 'ride_stale_test',
+          start_time: now - 5000,
+          end_time: null,
+          duration: 5,
+          moving_time: 0,
+          distance: 0,
+          average_speed: 0,
+          max_speed: 0,
+          status: 'running',
+          created_at: now - 5000,
+        },
+        currentLocation: {
+          latitude: validOrigin.latitude,
+          longitude: validOrigin.longitude,
+          heading: validOrigin.heading,
+          accuracy: validOrigin.accuracy,
+          altitude: validOrigin.altitude,
+        },
+      };
+      (trackingService as any).lastRecordedPoint = validOrigin;
+      (trackingService as any).stationaryAnchor = validOrigin;
+      (trackingService as any).isGpsStale = true;
+
+      // 1. Feed Null Island (0, 0) while stale -> rejected, stays stale, keeps validOrigin
+      await (trackingService as any).handleIncomingGPSPoints([
+        makePoint({ latitude: 0, longitude: 0, accuracy: 5, timestamp: now - 2000 }),
+      ]);
+      expect((trackingService as any).isGpsStale).toBe(true);
+      expect((trackingService as any).lastRecordedPoint.latitude).toBeCloseTo(28.6139, 5);
+
+      // 2. Feed poor accuracy (40m) while stale -> demoted, stays stale, keeps validOrigin
+      await (trackingService as any).handleIncomingGPSPoints([
+        makePoint({ latitude: 28.6140, longitude: 77.2090, accuracy: 40, timestamp: now - 1000 }),
+      ]);
+      expect((trackingService as any).isGpsStale).toBe(true);
+      expect((trackingService as any).lastRecordedPoint.latitude).toBeCloseTo(28.6139, 5);
+
+      // 3. Feed valid accurate fix after stale period -> accepted as new baseline anchor with 0 distance added
+      const validReanchor = moveNorthMeters(validOrigin, 25);
+      validReanchor.accuracy = 7;
+      validReanchor.timestamp = now;
+      await (trackingService as any).handleIncomingGPSPoints([validReanchor]);
+
+      expect((trackingService as any).isGpsStale).toBe(false);
+      expect((trackingService as any).lastRecordedPoint.latitude).toBeCloseTo(validReanchor.latitude, 5);
+      expect(trackingService.getState().currentDistanceKm).toBe(0);
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // Test 16 — Stationary phone recording zero distance (GPS + IMU sensors)
+  // ---------------------------------------------------------------------------
+  describe('Test 16 — Stationary phone recording zero distance', () => {
+    it('should record zero distance, zero moving time, and zero speed when phone is still (with IMU stationary confirmation)', () => {
+      const imu = new ImuMotionDetector();
+      const baseTs = recentTimestamp(20000);
+
+      // Feed 10 still accelerometer (~1g gravity, tiny sensor floor noise) and gyroscope (~0 rad/s) samples
+      const sampleTime = Date.now();
+      for (let i = 0; i < 10; i++) {
+        const ts = sampleTime - (10 - i) * 150;
+        imu.addAccelerometerSample(
+          { x: 0.002 * (i % 2 === 0 ? 1 : -1), y: 0.001, z: 0.999 },
+          ts
+        );
+        imu.addGyroscopeSample({ x: 0.003, y: -0.002, z: 0.001 }, ts);
+      }
+
+      expect(imu.isStationary(sampleTime)).toBe(true);
+
+      const anchor = makePoint({
+        latitude: 28.6448,
+        longitude: 77.2167,
+        accuracy: 10,
+        timestamp: baseTs,
+      });
+
+      // Simulate 15 seconds of urban canyon GPS drift around the stationary phone (up to 16m wander with false 2.2 m/s speed)
+      const driftOffsetsMeters = [3, -5, 8, 12, -10, 15, -14, 9, -6, 11, 16, -12, 7, -4, 5];
+      let totalDistanceM = 0;
+      let totalMovingTimeS = 0;
+      let maxSpeedKmh = 0;
+      let isCurrentlyStill = true;
+      let consecutiveMoving = 0;
+
+      for (let i = 0; i < driftOffsetsMeters.length; i++) {
+        const wanderingFix = moveNorthMeters(anchor, driftOffsetsMeters[i]);
+        wanderingFix.timestamp = baseTs + (i + 1) * 1000;
+        wanderingFix.accuracy = 10;
+        wanderingFix.speed = 2.2; // False urban multipath speed
+
+        const res = validateGPSPoint(wanderingFix, anchor, anchor, {
+          isCurrentlyStill,
+          consecutiveMovingFixes: consecutiveMoving,
+          imuIsStationary: imu.isStationary(sampleTime),
+        });
+
+        expect(res.isValid).toBe(true);
+        expect(res.isStationaryJitter).toBe(true);
+        expect(res.segmentDistanceMeters).toBe(0);
+        expect(res.segmentSpeedKmh).toBe(0);
+
+        totalDistanceM += res.segmentDistanceMeters ?? 0;
+        if (!res.isStationaryJitter) {
+          totalMovingTimeS += res.segmentTimeSeconds ?? 0;
+          maxSpeedKmh = Math.max(maxSpeedKmh, res.segmentSpeedKmh ?? 0);
+        }
+        isCurrentlyStill = Boolean(res.isStationaryJitter);
+        consecutiveMoving = res.consecutiveMovingFixes ?? 0;
+      }
+
+      expect(totalDistanceM).toBe(0);
+      expect(totalMovingTimeS).toBe(0);
+      expect(maxSpeedKmh).toBe(0);
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // Test 17 — Kalman smoothing reducing jitter on a noisy test trace
+  // ---------------------------------------------------------------------------
+  describe('Test 17 — Kalman smoothing reducing jitter on a noisy test trace', () => {
+    it('should reduce lateral coordinate jitter and false distance inflation on a noisy moving trace', () => {
+      const baseTs = recentTimestamp(30000);
+      const startLat = 28.6139;
+      const startLng = 77.2090;
+      const metersPerDegLat = 111_320;
+      const metersPerDegLng = 111_320 * Math.cos((startLat * Math.PI) / 180);
+
+      // True path: rider travels straight North at 10 m/s for 20 seconds (true distance = 200 m, longitude = constant startLng)
+      // Noisy GPS trace: alternating ±12m lateral (East/West) multipath jitter with 18m reported accuracy
+      const rawTrace: RawGPSPoint[] = [];
+      for (let i = 0; i <= 20; i++) {
+        const trueNorthM = i * 10;
+        const lateralJitterM = i === 0 ? 0 : (i % 2 === 1 ? 12 : -12);
+        rawTrace.push(
+          makePoint({
+            latitude: startLat + trueNorthM / metersPerDegLat,
+            longitude: startLng + lateralJitterM / metersPerDegLng,
+            accuracy: 18,
+            speed: 10,
+            timestamp: baseTs + i * 1000,
+          })
+        );
+      }
+
+      const smoothedTrace = smoothGPSTrace(rawTrace);
+      expect(smoothedTrace).toHaveLength(rawTrace.length);
+
+      // Compute total path length and mean lateral error for raw vs smoothed trace
+      let rawTotalDistanceM = 0;
+      let smoothedTotalDistanceM = 0;
+      let rawLateralErrorSumM = 0;
+      let smoothedLateralErrorSumM = 0;
+
+      for (let i = 1; i < rawTrace.length; i++) {
+        rawTotalDistanceM += calculateDistanceMeters(rawTrace[i - 1], rawTrace[i]);
+        smoothedTotalDistanceM += calculateDistanceMeters(smoothedTrace[i - 1], smoothedTrace[i]);
+
+        rawLateralErrorSumM += Math.abs(rawTrace[i].longitude - startLng) * metersPerDegLng;
+        smoothedLateralErrorSumM += Math.abs(smoothedTrace[i].longitude - startLng) * metersPerDegLng;
+      }
+
+      // Raw zig-zag trace inflates 200m ride to > 500m; Kalman smoothed trace is significantly closer to 200m
+      expect(rawTotalDistanceM).toBeGreaterThan(450);
+      expect(smoothedTotalDistanceM).toBeLessThan(rawTotalDistanceM * 0.65);
+      expect(smoothedLateralErrorSumM).toBeLessThan(rawLateralErrorSumM * 0.5);
     });
   });
 });
